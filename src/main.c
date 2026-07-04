@@ -14,6 +14,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+/*
+ * systemd owns the UDP endpoint so it can queue traffic while this program is
+ * absent. Each invocation handles one queued datagram and exits, keeping the
+ * eventual packet action isolated and allowing systemd to supervise its
+ * lifetime. The activation protocol is small enough to implement directly;
+ * avoiding libsystemd keeps the handler suitable for minimal installations.
+ */
 enum { SD_LISTEN_FDS_START = 3, MAX_PACKET_SIZE = 65535 };
 
 static int parse_positive_long(const char *text, long *value)
@@ -33,7 +40,11 @@ static int parse_positive_long(const char *text, long *value)
     return 0;
 }
 
-/* Validate the subset of systemd's socket activation protocol that we use. */
+/*
+ * LISTEN_PID prevents stale activation variables from making us consume an
+ * unrelated inherited descriptor. The upper bound also makes descriptor
+ * arithmetic safe before its conversion to int.
+ */
 static int activated_socket_count(void)
 {
     const char *pid_text = getenv("LISTEN_PID");
@@ -57,6 +68,7 @@ static bool is_datagram_socket(int fd)
     int type = 0;
     socklen_t length = sizeof(type);
 
+    /* Fail closed: later actions must never be driven by an unexpected fd. */
     return fstat(fd, &status) == 0 && S_ISSOCK(status.st_mode) &&
            getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
            type == SOCK_DGRAM;
@@ -90,7 +102,10 @@ static void format_peer(const struct sockaddr_storage *peer, socklen_t length,
         (void)snprintf(output + used, output_size - used, ":%u", (unsigned int)port);
 }
 
-/* Keep each journal record on one line and make arbitrary binary data visible. */
+/*
+ * Escaping rather than treating the payload as text prevents control bytes or
+ * embedded newlines from forging journal records while preserving diagnostics.
+ */
 static void print_payload(const unsigned char *data, size_t length)
 {
     for (size_t index = 0; index < length; ++index) {
@@ -132,6 +147,11 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    /*
+     * A socket unit may supply several endpoints, for example separate IPv4
+     * and IPv6 sockets. Polling all of them keeps that unit-file choice out of
+     * the packet-processing code.
+     */
     for (int index = 0; index < socket_count; ++index) {
         int fd = SD_LISTEN_FDS_START + index;
         if (!is_datagram_socket(fd)) {
@@ -143,6 +163,7 @@ int main(int argc, char **argv)
         sockets[index].events = POLLIN;
     }
 
+    /* Signals used by the service manager are not packet-processing failures. */
     do {
         ready = poll(sockets, (nfds_t)socket_count, -1);
     } while (ready < 0 && errno == EINTR);
@@ -166,6 +187,10 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    /*
+     * Receive exactly one packet. Any remaining datagrams stay on systemd's
+     * socket and cause a fresh, independently supervised invocation.
+     */
     do {
         received = recvfrom(selected, packet, sizeof(packet), 0,
                             (struct sockaddr *)&peer, &peer_length);
