@@ -1,0 +1,8 @@
+# Build products
+/build/
+/knockknock
+
+# Editor and OS clutter
+*.swp
+*.swo
+.DS_Store

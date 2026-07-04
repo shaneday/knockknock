@@ -1,0 +1,9 @@
+[Unit]
+Description=Knockknock UDP socket
+
+[Socket]
+ListenDatagram=0.0.0.0:9999
+Service=knockknock.service
+
+[Install]
+WantedBy=sockets.target

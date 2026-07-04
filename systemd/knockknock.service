@@ -1,0 +1,21 @@
+[Unit]
+Description=Process one knockknock UDP packet
+Requires=knockknock.socket
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/knockknock
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
