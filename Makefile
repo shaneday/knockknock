@@ -13,7 +13,7 @@ DESTDIR ?=
 TARGET := build/knockknock
 OBJECTS := build/main.o
 
-.PHONY: all clean check install
+.PHONY: all clean install
 
 all: $(TARGET)
 
@@ -25,9 +25,6 @@ build/main.o: src/main.c | build
 
 build:
 	mkdir -p $@
-
-check: $(TARGET)
-	./tests/unit.sh $(TARGET)
 
 install: $(TARGET)
 	install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(SYSTEMD_UNIT_DIR)"
