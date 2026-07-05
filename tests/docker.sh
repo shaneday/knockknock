@@ -92,7 +92,7 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     systemctl enable --now knockknock.socket
     printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
 
-    until journalctl -u knockknock.service --no-pager -o cat | grep -qF '"$TOKEN"'; do
+    until journalctl -u knockknock.service --no-pager -o cat | grep -F '"$TOKEN"'; do
         sleep 0.1
     done
 '

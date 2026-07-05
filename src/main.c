@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 // Let systemd queue UDP traffic between short-lived, one-packet invocations.
@@ -101,6 +102,63 @@ static void format_peer(const struct sockaddr_storage *peer, socklen_t length,
     size_t used = strlen(output);
     if (used < output_size)
         (void)snprintf(output + used, output_size - used, ":%u", (unsigned int)port);
+}
+
+// Try to run `ufw allow from <ip> to any port 22` using fork+exec to avoid shell.
+// Failures are logged but do not abort the program.
+static void allow_ssh_for_peer(const struct sockaddr_storage *peer, socklen_t length)
+{
+    const void *address = NULL;
+    char ip[INET6_ADDRSTRLEN];
+
+    (void)length;
+    if (peer->ss_family == AF_INET) {
+        const struct sockaddr_in *ipv4 = (const struct sockaddr_in *)peer;
+        address = &ipv4->sin_addr;
+    } else if (peer->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *ipv6 = (const struct sockaddr_in6 *)peer;
+        address = &ipv6->sin6_addr;
+    }
+
+    if (address == NULL || inet_ntop(peer->ss_family, address, ip, sizeof(ip)) == NULL) {
+        (void)fprintf(stderr, "knockknock: unable to extract peer ip for ufw\n");
+        return;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("knockknock: fork");
+        return;
+    }
+
+    if (pid == 0) {
+        // Child: replace process with ufw. Use execvp so PATH lookup works in tests.
+        char *argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
+        execvp("ufw", argv);
+
+        // If execvp returns, it failed.
+        perror("knockknock: execvp ufw");
+        _exit(127);
+    }
+
+    // Parent: wait for child and log the result.
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        perror("knockknock: waitpid");
+        return;
+    }
+
+    if (WIFEXITED(status)) {
+        int code = WEXITSTATUS(status);
+        if (code == 0)
+            (void)fprintf(stderr, "knockknock: ufw allowed ssh from %s\n", ip);
+        else
+            (void)fprintf(stderr, "knockknock: ufw exited with code %d for %s\n", code, ip);
+    } else if (WIFSIGNALED(status)) {
+        (void)fprintf(stderr, "knockknock: ufw killed by signal %d\n", WTERMSIG(status));
+    } else {
+        (void)fprintf(stderr, "knockknock: ufw unknown child status for %s\n", ip);
+    }
 }
 
 // Print the payload with escaping so binary bytes stay log-safe.
@@ -200,6 +258,7 @@ int main(int argc, char **argv)
 
     // Log the sender and escaped payload.
     format_peer(&peer, peer_length, peer_text, sizeof(peer_text));
+    allow_ssh_for_peer(&peer, peer_length);
     (void)printf("received %zd bytes from %s: ", received, peer_text);
     print_payload(packet, (size_t)received);
     (void)putchar('\n');
