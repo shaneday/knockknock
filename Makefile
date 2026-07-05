@@ -34,3 +34,8 @@ install: $(TARGET)
 
 clean:
 	rm -rf build
+
+test:
+	@echo "Running tests..."
+	bash tests/docker.sh
+	type orb && bash tests/orbstack.sh
