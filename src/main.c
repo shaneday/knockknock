@@ -2,13 +2,10 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <limits.h>
 #include <fcntl.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -70,55 +67,50 @@ static bool is_datagram_socket(int fd)
            type == SOCK_DGRAM;
 }
 
-// Render a sockaddr_storage as host:port for logging.
-static void format_peer(const struct sockaddr_storage *peer, socklen_t length,
-                        char *output, size_t output_size)
+// Extract the numeric IP from a peer address into ip[INET6_ADDRSTRLEN].
+// Returns the port number, or -1 on failure.
+static int peer_to_ip(const struct sockaddr_storage *peer, char ip[INET6_ADDRSTRLEN])
 {
     const void *address = NULL;
-    uint16_t port = 0;
+    int port = 0;
 
-    // Extract the numeric address and port from the concrete socket type.
-    (void)length;
     if (peer->ss_family == AF_INET) {
         const struct sockaddr_in *ipv4 = (const struct sockaddr_in *)peer;
         address = &ipv4->sin_addr;
-        port = ntohs(ipv4->sin_port);
+        port = (int)ntohs(ipv4->sin_port);
     } else if (peer->ss_family == AF_INET6) {
         const struct sockaddr_in6 *ipv6 = (const struct sockaddr_in6 *)peer;
         address = &ipv6->sin6_addr;
-        port = ntohs(ipv6->sin6_port);
+        port = (int)ntohs(ipv6->sin6_port);
     }
 
-    // Fall back cleanly if the address cannot be rendered.
-    if (address == NULL || output_size > (size_t)UINT_MAX ||
-        inet_ntop(peer->ss_family, address, output, (socklen_t)output_size) == NULL) {
+    if (address == NULL || inet_ntop(peer->ss_family, address, ip, INET6_ADDRSTRLEN) == NULL)
+        return -1;
+
+    return port;
+}
+
+// Render a sockaddr_storage as host:port for logging.
+static void format_peer(const struct sockaddr_storage *peer,
+                        char *output, size_t output_size)
+{
+    char ip[INET6_ADDRSTRLEN];
+    int port = peer_to_ip(peer, ip);
+
+    if (port < 0) {
         (void)snprintf(output, output_size, "unknown");
         return;
     }
-
-    // Append the peer port after the textual IP address.
-    size_t used = strlen(output);
-    if (used < output_size)
-        (void)snprintf(output + used, output_size - used, ":%u", (unsigned int)port);
+    (void)snprintf(output, output_size, "%s:%d", ip, port);
 }
 
 // Try to run `ufw allow from <ip> to any port 22` using fork+exec to avoid shell.
 // Failures are logged but do not abort the program.
-static void allow_ssh_for_peer(const struct sockaddr_storage *peer, socklen_t length)
+static void allow_ssh_for_peer(const struct sockaddr_storage *peer)
 {
-    const void *address = NULL;
     char ip[INET6_ADDRSTRLEN];
 
-    (void)length;
-    if (peer->ss_family == AF_INET) {
-        const struct sockaddr_in *ipv4 = (const struct sockaddr_in *)peer;
-        address = &ipv4->sin_addr;
-    } else if (peer->ss_family == AF_INET6) {
-        const struct sockaddr_in6 *ipv6 = (const struct sockaddr_in6 *)peer;
-        address = &ipv6->sin6_addr;
-    }
-
-    if (address == NULL || inet_ntop(peer->ss_family, address, ip, sizeof(ip)) == NULL) {
+    if (peer_to_ip(peer, ip) < 0) {
         (void)fprintf(stderr, "knockknock: unable to extract peer ip for ufw\n");
         return;
     }
@@ -219,8 +211,8 @@ int main(int argc, char **argv)
     }
 
     // Log the sender and escaped payload.
-    format_peer(&peer, peer_length, peer_text, sizeof(peer_text));
-    allow_ssh_for_peer(&peer, peer_length);
+    format_peer(&peer, peer_text, sizeof(peer_text));
+    allow_ssh_for_peer(&peer);
     (void)printf("received %zd bytes from %s: ", received, peer_text);
     print_payload(packet, (size_t)received);
     (void)putchar('\n');
