@@ -132,12 +132,11 @@ static void allow_ssh_for_peer(const struct sockaddr_storage *peer, socklen_t le
     }
 
     if (pid == 0) {
-        // Child: replace process with ufw. Use execvp so PATH lookup works in tests.
-        char *argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
-        execvp("ufw", argv);
-
-        // If execvp returns, it failed.
-        perror("knockknock: execvp ufw");
+        // Child: absolute path and empty environment prevent PATH hijacking.
+        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
+        char *const ufw_envp[] = { NULL };
+        execve("/usr/sbin/ufw", ufw_argv, ufw_envp);
+        perror("knockknock: execve ufw");
         _exit(127);
     }
 
