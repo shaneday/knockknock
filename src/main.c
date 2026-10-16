@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <limits.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -197,6 +198,12 @@ int main(int argc, char **argv)
     if (!is_datagram_socket(SD_LISTEN_FDS_START)) {
         fprintf(stderr, "knockknock: activated fd %d is not a datagram socket\n",
                 SD_LISTEN_FDS_START);
+        return EXIT_FAILURE;
+    }
+
+    // Prevent the socket from leaking into the ufw child process.
+    if (fcntl(SD_LISTEN_FDS_START, F_SETFD, FD_CLOEXEC) < 0) {
+        perror("knockknock: fcntl FD_CLOEXEC");
         return EXIT_FAILURE;
     }
 
