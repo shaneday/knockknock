@@ -14,7 +14,7 @@
 
 // Let systemd queue UDP traffic between short-lived, one-packet invocations.
 // Implement socket activation directly to keep the binary small and standalone.
-enum { SD_LISTEN_FDS_START = 3, MAX_PACKET_SIZE = 65535 };
+enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512 };
 
 // Parse a long >0, handling NULL, empty, and non-numeric strings as errors.
 static int parse_positive_long(const char *text, long *value)
@@ -168,7 +168,7 @@ static void print_payload(const unsigned char *data, size_t length)
 // Receive one activated datagram, log it, and exit.
 int main(int argc, char **argv)
 {
-    unsigned char packet[MAX_PACKET_SIZE];
+    unsigned char packet[MAX_KNOCK_SIZE];
     struct sockaddr_storage peer;
     socklen_t peer_length = sizeof(peer);
     char peer_text[INET6_ADDRSTRLEN + 8];
@@ -200,13 +200,20 @@ int main(int argc, char **argv)
     }
 
     // Read exactly one packet for this short-lived invocation.
+    // MSG_TRUNC returns the true datagram length even when it exceeds the buffer,
+    // so an oversized knock cannot pass a prefix-based payload check.
     do {
-        received = recvfrom(SD_LISTEN_FDS_START, packet, sizeof(packet), 0,
+        received = recvfrom(SD_LISTEN_FDS_START, packet, sizeof(packet), MSG_TRUNC,
                             (struct sockaddr *)&peer, &peer_length);
     } while (received < 0 && errno == EINTR);
 
     if (received < 0) {
         perror("knockknock: recvfrom");
+        return EXIT_FAILURE;
+    }
+
+    if (received > (ssize_t)sizeof(packet)) {
+        fprintf(stderr, "knockknock: oversized datagram (%zd bytes), ignoring\n", received);
         return EXIT_FAILURE;
     }
 
