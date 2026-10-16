@@ -3,7 +3,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <limits.h>
-#include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -37,8 +36,7 @@ static int parse_positive_long(const char *text, long *value)
     return 0;
 }
 
-// Returns the number of sockets passed by systemd socket activation, or -1 on
-// error.
+// Returns 1 if systemd passed exactly one socket, -1 otherwise.
 static int activated_socket_count(void)
 {
     const char *pid_text = getenv("LISTEN_PID");
@@ -47,16 +45,15 @@ static int activated_socket_count(void)
     long listen_fds;
 
     // LISTEN_PID prevents stale activation variables from making us consume an
-    // unrelated inherited descriptor. The upper bound also makes descriptor
-    // arithmetic safe before its conversion to int.
+    // unrelated inherited descriptor.
     if (parse_positive_long(pid_text, &listen_pid) < 0 ||
         parse_positive_long(fds_text, &listen_fds) < 0 ||
-        listen_pid != (long)getpid() || listen_fds > INT_MAX - SD_LISTEN_FDS_START) {
-        fprintf(stderr, "knockknock: no valid systemd socket activation data\n");
+        listen_pid != (long)getpid() || listen_fds != 1) {
+        fprintf(stderr, "knockknock: expected exactly one systemd socket\n");
         return -1;
     }
 
-    return (int)listen_fds;
+    return 1;
 }
 
 // Returns true if the given fd is a datagram socket, false otherwise.
@@ -182,10 +179,6 @@ int main(int argc, char **argv)
     struct sockaddr_storage peer;
     socklen_t peer_length = sizeof(peer);
     char peer_text[INET6_ADDRSTRLEN + 8];
-    int socket_count;
-    struct pollfd *sockets;
-    int ready;
-    int selected = -1;
     ssize_t received;
 
     // Reject unexpected command-line usage.
@@ -195,58 +188,21 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Discover the sockets systemd passed to this activation.
-    socket_count = activated_socket_count();
-    if (socket_count < 1)
+    // Validate that systemd passed exactly one socket.
+    if (activated_socket_count() < 0)
         return EXIT_FAILURE;
 
-    // Allocate poll state for every activated socket.
-    sockets = calloc((size_t)socket_count, sizeof(*sockets));
-    if (sockets == NULL) {
-        perror("knockknock: calloc");
-        return EXIT_FAILURE;
-    }
-
-    // Prepare every activated endpoint for readiness polling.
-    for (int index = 0; index < socket_count; ++index) {
-        int fd = SD_LISTEN_FDS_START + index;
-        if (!is_datagram_socket(fd)) {
-            fprintf(stderr, "knockknock: activated fd %d is not a datagram socket\n", fd);
-            free(sockets);
-            return EXIT_FAILURE;
-        }
-        sockets[index].fd = fd;
-        sockets[index].events = POLLIN;
-    }
-
-    // Wait for at least one activated socket to become readable.
-    do {
-        ready = poll(sockets, (nfds_t)socket_count, -1);
-    } while (ready < 0 && errno == EINTR);
-
-    if (ready < 0) {
-        perror("knockknock: poll");
-        free(sockets);
-        return EXIT_FAILURE;
-    }
-
-    // Pick the first socket that currently has a packet queued.
-    for (int index = 0; index < socket_count; ++index) {
-        if ((sockets[index].revents & POLLIN) != 0) {
-            selected = sockets[index].fd;
-            break;
-        }
-    }
-    free(sockets);
-
-    if (selected < 0) {
-        fprintf(stderr, "knockknock: activated socket became unavailable\n");
+    // With Accept=no datagram activation the packet is already queued; a
+    // blocking recvfrom on fd 3 is all that is needed — no poll required.
+    if (!is_datagram_socket(SD_LISTEN_FDS_START)) {
+        fprintf(stderr, "knockknock: activated fd %d is not a datagram socket\n",
+                SD_LISTEN_FDS_START);
         return EXIT_FAILURE;
     }
 
     // Read exactly one packet for this short-lived invocation.
     do {
-        received = recvfrom(selected, packet, sizeof(packet), 0,
+        received = recvfrom(SD_LISTEN_FDS_START, packet, sizeof(packet), 0,
                             (struct sockaddr *)&peer, &peer_length);
     } while (received < 0 && errno == EINTR);
 
