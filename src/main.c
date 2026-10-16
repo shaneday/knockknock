@@ -156,10 +156,10 @@ static void print_payload(const unsigned char *data, size_t length)
     // Escape payload bytes so logs stay readable and structurally safe.
     for (size_t index = 0; index < length; ++index) {
         unsigned char byte = data[index];
-        if (byte >= 0x20 && byte <= 0x7e && byte != '\\')
-            (void)putchar((int)byte);
-        else if (byte == '\\')
+        if (byte == '\\')
             (void)fputs("\\\\", stdout);
+        else if (byte >= 0x20 && byte <= 0x7e)
+            (void)putchar((int)byte);
         else
             (void)printf("\\x%02x", (unsigned int)byte);
     }
@@ -223,5 +223,6 @@ int main(int argc, char **argv)
     print_payload(packet, (size_t)received);
     (void)putchar('\n');
     allow_ssh_for_peer(&peer);
+    (void)fflush(stdout);
     return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
