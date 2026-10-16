@@ -43,9 +43,11 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq && \
-    apt-get install -qq build-essential systemd systemd-sysv bash && \
+    apt-get install -qq build-essential systemd systemd-sysv bash ufw iptables && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    update-alternatives --set iptables /usr/sbin/iptables-legacy && \
+    update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 
 CMD ["/lib/systemd/systemd"]
 EOF
@@ -98,6 +100,10 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     done
 
     journalctl -u knockknock.service --no-pager -o cat
+
+    echo "Checking ufw rule..."
+    ufw show added | grep -F "from 127.0.0.1" | grep -F "port 22" | grep -F "knockknock"
+    echo "ufw rule check passed"
 '
 
 echo "Docker systemd socket-activation test passed"

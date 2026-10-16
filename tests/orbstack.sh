@@ -36,7 +36,7 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     cp -R '$PROJECT_DIR'/.[!.]* '$PROJECT_DIR'/* /tmp/knockknock-source/
     cd /tmp/knockknock-source
     apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -qq build-essential
+    DEBIAN_FRONTEND=noninteractive apt-get install -qq build-essential ufw
     make all install
     ls -l build/knockknock
     ldd build/knockknock
@@ -49,6 +49,10 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     done
 
     journalctl -u knockknock.service --no-pager -o cat
+
+    echo "Checking ufw rule..."
+    ufw show added | grep -F 'from 127.0.0.1' | grep -F 'port 22' | grep -F 'knockknock'
+    echo "ufw rule check passed"
 EOF
 
 echo "OrbStack systemd socket-activation test passed"
