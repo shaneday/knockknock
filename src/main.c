@@ -171,7 +171,7 @@ int main(int argc, char **argv)
     unsigned char packet[MAX_KNOCK_SIZE];
     struct sockaddr_storage peer;
     socklen_t peer_length = sizeof(peer);
-    char peer_text[INET6_ADDRSTRLEN + 8];
+    char peer_text[INET6_ADDRSTRLEN + 12]; /* ip + colon + 5-digit port + NUL */
     ssize_t received;
 
     // Reject unexpected command-line usage.
