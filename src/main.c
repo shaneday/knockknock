@@ -219,9 +219,9 @@ int main(int argc, char **argv)
 
     // Log the sender and escaped payload.
     format_peer(&peer, peer_text, sizeof(peer_text));
-    allow_ssh_for_peer(&peer);
     (void)printf("received %zd bytes from %s: ", received, peer_text);
     print_payload(packet, (size_t)received);
     (void)putchar('\n');
+    allow_ssh_for_peer(&peer);
     return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
