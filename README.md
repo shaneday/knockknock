@@ -23,6 +23,17 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now knockknock.socket
 ```
 
+Before starting the socket, create the secret file that every incoming knock
+must match exactly:
+
+```sh
+echo 'my-secret-passphrase' | sudo tee /etc/knockknock.secret
+```
+
+The daemon reads this file on each invocation and rejects any packet that does
+not match it byte-for-byte (trailing newline stripped). To rotate the secret,
+replace the file — no service restart needed.
+
 The socket listens on UDP port 9999 by default. Test it with:
 
 ```sh

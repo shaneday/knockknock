@@ -16,6 +16,11 @@
 // Implement socket activation directly to keep the binary small and standalone.
 enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512 };
 
+// Path to the file holding the expected knock secret; override at compile time for tests.
+#ifndef SECRET_PATH
+#define SECRET_PATH "/etc/knockknock.secret"
+#endif
+
 // Parse a long >0, handling NULL, empty, and non-numeric strings as errors.
 static int parse_positive_long(const char *text, long *value)
 {
@@ -52,6 +57,44 @@ static int activated_socket_count(void)
     }
 
     return 1;
+}
+
+// Read the knock secret from SECRET_PATH into buf, stripping any trailing newline.
+// Returns the secret length on success, -1 on failure.
+static int load_secret(char *buf, size_t buf_size)
+{
+    FILE *f = fopen(SECRET_PATH, "r");
+    if (f == NULL) {
+        perror("knockknock: " SECRET_PATH);
+        return -1;
+    }
+    size_t n = fread(buf, 1, buf_size - 1, f);
+    int err = ferror(f);
+    fclose(f);
+    if (err) {
+        fprintf(stderr, "knockknock: error reading " SECRET_PATH "\n");
+        return -1;
+    }
+    if (n > 0 && buf[n - 1] == '\n')
+        n--;
+    if (n == 0) {
+        fprintf(stderr, "knockknock: " SECRET_PATH " is empty\n");
+        return -1;
+    }
+    buf[n] = '\0';
+    return (int)n;
+}
+
+// Constant-time comparison to avoid leaking secret content via timing.
+static bool secrets_match(const unsigned char *payload, size_t payload_len,
+                           const char *secret, size_t secret_len)
+{
+    if (payload_len != secret_len)
+        return false;
+    unsigned char diff = 0;
+    for (size_t i = 0; i < payload_len; i++)
+        diff |= payload[i] ^ (unsigned char)secret[i];
+    return diff == 0;
 }
 
 // Returns true if the given fd is a datagram socket, false otherwise.
@@ -169,9 +212,11 @@ static void print_payload(const unsigned char *data, size_t length)
 int main(int argc, char **argv)
 {
     unsigned char packet[MAX_KNOCK_SIZE];
+    char secret[MAX_KNOCK_SIZE + 1];
     struct sockaddr_storage peer;
     socklen_t peer_length = sizeof(peer);
     char peer_text[INET6_ADDRSTRLEN + 12]; /* ip + colon + 5-digit port + NUL */
+    int secret_len;
     ssize_t received;
 
     // Reject unexpected command-line usage.
@@ -180,6 +225,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: knockknock\n");
         return EXIT_FAILURE;
     }
+
+    // Fail fast if the secret is missing or empty before touching the socket.
+    secret_len = load_secret(secret, sizeof(secret));
+    if (secret_len < 0)
+        return EXIT_FAILURE;
 
     // Validate that systemd passed exactly one socket.
     if (activated_socket_count() < 0)
@@ -217,12 +267,18 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Log the sender and escaped payload.
+    // Log every knock attempt before validating so the audit trail is complete.
     format_peer(&peer, peer_text, sizeof(peer_text));
     (void)printf("received %zd bytes from %s: ", received, peer_text);
     print_payload(packet, (size_t)received);
     (void)putchar('\n');
-    allow_ssh_for_peer(&peer);
     (void)fflush(stdout);
+
+    if (!secrets_match(packet, (size_t)received, secret, (size_t)secret_len)) {
+        fprintf(stderr, "knockknock: rejected knock from %s\n", peer_text);
+        return EXIT_SUCCESS;
+    }
+
+    allow_ssh_for_peer(&peer);
     return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
