@@ -39,6 +39,7 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     DEBIAN_FRONTEND=noninteractive apt-get install -qq build-essential
     make all install
     ls -l build/knockknock
+    ldd build/knockknock
     systemctl daemon-reload
     systemctl enable --now knockknock.socket
     printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
@@ -46,6 +47,8 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     until journalctl -u knockknock.service --no-pager -o cat | grep -qF '$TOKEN'; do
         sleep 0.1
     done
+
+    journalctl -u knockknock.service --no-pager -o cat
 EOF
 
 echo "OrbStack systemd socket-activation test passed"

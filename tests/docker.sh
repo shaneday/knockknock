@@ -88,6 +88,7 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     make clean
     make all install
     ls -l build/knockknock
+    ldd build/knockknock
     systemctl daemon-reload
     systemctl enable --now knockknock.socket
     printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
@@ -95,6 +96,8 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     until journalctl -u knockknock.service --no-pager -o cat | grep -F '"$TOKEN"'; do
         sleep 0.1
     done
+
+    journalctl -u knockknock.service --no-pager -o cat
 '
 
 echo "Docker systemd socket-activation test passed"
