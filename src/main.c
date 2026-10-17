@@ -265,5 +265,7 @@ int main(int argc, char **argv)
 
     if (port >= 0)
         allow_ssh_for_peer(ip);
+    else
+        fprintf(stderr, "knockknock: valid knock from unknown address, ufw not called\n");
     return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
