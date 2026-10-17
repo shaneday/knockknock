@@ -132,7 +132,7 @@ static int peer_to_ip(const struct sockaddr_storage *peer, char ip[INET6_ADDRSTR
 
 // Try to run `ufw allow from <ip> to any port 22` using fork+exec to avoid shell.
 // Failures are logged but do not abort the program.
-static void allow_ssh_for_peer(const char *ip)
+static void allow_ssh_for_peer(char *ip)
 {
     pid_t pid = fork();
     if (pid < 0) {
@@ -142,7 +142,7 @@ static void allow_ssh_for_peer(const char *ip)
 
     if (pid == 0) {
         // Child: absolute path and empty environment prevent PATH hijacking.
-        char *const ufw_argv[] = { "ufw", "allow", "from", (char *)ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
+        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
         char *const ufw_envp[] = { NULL };
         execve("/usr/sbin/ufw", ufw_argv, ufw_envp);
         perror("knockknock: execve ufw");
