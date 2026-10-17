@@ -41,6 +41,7 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     ls -l build/knockknock
     ldd build/knockknock
     systemctl daemon-reload
+    printf '%s' '$TOKEN' > /etc/knockknock.secret
     systemctl enable --now knockknock.socket
     printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
 
