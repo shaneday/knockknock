@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <string.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -85,16 +86,12 @@ static int load_secret(char *buf, size_t buf_size)
     return (int)n;
 }
 
-// Constant-time comparison to avoid leaking secret content via timing.
+// Return true if payload exactly matches the secret.
 static bool secrets_match(const unsigned char *payload, size_t payload_len,
                            const char *secret, size_t secret_len)
 {
-    if (payload_len != secret_len)
-        return false;
-    unsigned char diff = 0;
-    for (size_t i = 0; i < payload_len; i++)
-        diff |= payload[i] ^ (unsigned char)secret[i];
-    return diff == 0;
+    return payload_len == secret_len &&
+           memcmp(payload, secret, payload_len) == 0;
 }
 
 // Returns true if the given fd is a datagram socket, false otherwise.
