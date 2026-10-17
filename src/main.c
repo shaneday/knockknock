@@ -40,8 +40,8 @@ static int parse_positive_long(const char *text, long *value)
     return 0;
 }
 
-// Returns 1 if systemd passed exactly one socket, -1 otherwise.
-static int activated_socket_count(void)
+// Returns 0 if systemd passed exactly one socket, -1 otherwise.
+static int validate_socket_activation(void)
 {
     const char *pid_text = getenv("LISTEN_PID");
     const char *fds_text = getenv("LISTEN_FDS");
@@ -57,7 +57,7 @@ static int activated_socket_count(void)
         return -1;
     }
 
-    return 1;
+    return 0;
 }
 
 // Read the knock secret from SECRET_PATH into buf, stripping any trailing newline.
@@ -208,7 +208,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
 
     // Validate that systemd passed exactly one socket.
-    if (activated_socket_count() < 0)
+    if (validate_socket_activation() < 0)
         return EXIT_FAILURE;
 
     // With Accept=no datagram activation the packet is already queued; a
