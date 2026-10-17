@@ -14,7 +14,7 @@
 
 // Let systemd queue UDP traffic between short-lived, one-packet invocations.
 // Implement socket activation directly to keep the binary small and standalone.
-enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512 };
+enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512, LOG_PAYLOAD_MAX = 64 };
 
 // Path to the file holding the expected knock secret; override at compile time for tests.
 #ifndef SECRET_PATH
@@ -269,8 +269,11 @@ int main(int argc, char **argv)
 
     // Log every knock attempt before validating so the audit trail is complete.
     format_peer(&peer, peer_text, sizeof(peer_text));
+    size_t log_len = (size_t)received < LOG_PAYLOAD_MAX ? (size_t)received : LOG_PAYLOAD_MAX;
     (void)printf("received %zd bytes from %s: ", received, peer_text);
-    print_payload(packet, (size_t)received);
+    print_payload(packet, log_len);
+    if (log_len < (size_t)received)
+        (void)fputs("[...]", stdout);
     (void)putchar('\n');
     (void)fflush(stdout);
 
