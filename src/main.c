@@ -263,7 +263,7 @@ int main(int argc, char **argv)
     }
 
     if (received > (ssize_t)sizeof(packet)) {
-        fprintf(stderr, "knockknock: oversized datagram (%zd bytes), ignoring\n", received);
+        fprintf(stderr, "knockknock: rejected oversized datagram (%zd bytes)\n", received);
         return EXIT_FAILURE;
     }
 
