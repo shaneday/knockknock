@@ -15,6 +15,7 @@ ProtectHome=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
+ReadOnlyPaths=/etc/knockknock.secret
 ReadWritePaths=/etc/ufw
 RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK
 RestrictNamespaces=yes

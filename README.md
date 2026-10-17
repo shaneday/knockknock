@@ -28,7 +28,10 @@ must match exactly:
 
 ```sh
 echo 'my-secret-passphrase' | sudo tee /etc/knockknock.secret
+sudo chmod 600 /etc/knockknock.secret
 ```
+
+The file must be readable only by root.
 
 The daemon reads this file on each invocation and rejects any packet that does
 not match it byte-for-byte (trailing newline stripped). To rotate the secret,
