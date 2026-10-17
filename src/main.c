@@ -130,31 +130,10 @@ static int peer_to_ip(const struct sockaddr_storage *peer, char ip[INET6_ADDRSTR
     return port;
 }
 
-// Render a sockaddr_storage as host:port for logging.
-static void format_peer(const struct sockaddr_storage *peer,
-                        char *output, size_t output_size)
-{
-    char ip[INET6_ADDRSTRLEN];
-    int port = peer_to_ip(peer, ip);
-
-    if (port < 0) {
-        (void)snprintf(output, output_size, "unknown");
-        return;
-    }
-    (void)snprintf(output, output_size, "%s:%d", ip, port);
-}
-
 // Try to run `ufw allow from <ip> to any port 22` using fork+exec to avoid shell.
 // Failures are logged but do not abort the program.
-static void allow_ssh_for_peer(const struct sockaddr_storage *peer)
+static void allow_ssh_for_peer(const char *ip)
 {
-    char ip[INET6_ADDRSTRLEN];
-
-    if (peer_to_ip(peer, ip) < 0) {
-        (void)fprintf(stderr, "knockknock: unable to extract peer ip for ufw\n");
-        return;
-    }
-
     pid_t pid = fork();
     if (pid < 0) {
         perror("knockknock: fork");
@@ -163,7 +142,7 @@ static void allow_ssh_for_peer(const struct sockaddr_storage *peer)
 
     if (pid == 0) {
         // Child: absolute path and empty environment prevent PATH hijacking.
-        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
+        char *const ufw_argv[] = { "ufw", "allow", "from", (char *)ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
         char *const ufw_envp[] = { NULL };
         execve("/usr/sbin/ufw", ufw_argv, ufw_envp);
         perror("knockknock: execve ufw");
@@ -265,7 +244,12 @@ int main(int argc, char **argv)
     }
 
     // Log every knock attempt before validating so the audit trail is complete.
-    format_peer(&peer, peer_text, sizeof(peer_text));
+    char ip[INET6_ADDRSTRLEN];
+    int port = peer_to_ip(&peer, ip);
+    if (port < 0)
+        (void)snprintf(peer_text, sizeof(peer_text), "unknown");
+    else
+        (void)snprintf(peer_text, sizeof(peer_text), "%s:%d", ip, port);
     size_t log_len = (size_t)received < LOG_PAYLOAD_MAX ? (size_t)received : LOG_PAYLOAD_MAX;
     (void)printf("received %zd bytes from %s: ", received, peer_text);
     print_payload(packet, log_len);
@@ -279,6 +263,7 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    allow_ssh_for_peer(&peer);
+    if (port >= 0)
+        allow_ssh_for_peer(ip);
     return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
