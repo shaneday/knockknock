@@ -12,7 +12,7 @@ Requirements are a C11 compiler, GNU Make, and Linux headers.
 
 ```sh
 make
-make check
+make test
 ```
 
 ## Install
