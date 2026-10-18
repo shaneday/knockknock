@@ -24,6 +24,13 @@ enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512 };
 #define SECRET_PATH "/etc/knockknock.secret"
 #endif
 
+#ifndef SSH_PORT
+#define SSH_PORT 22
+#endif
+#if SSH_PORT < 1 || SSH_PORT > 65535
+#error "SSH_PORT must be between 1 and 65535"
+#endif
+
 // Parse a long >0, handling NULL, empty, and non-numeric strings as errors.
 static int parse_positive_long(const char *text, long *value)
 {
@@ -132,10 +139,12 @@ static int peer_to_ip(const struct sockaddr_storage *peer, char ip[INET6_ADDRSTR
     return port;
 }
 
-// Try to run `ufw allow from <ip> to any port 22` using fork+exec to avoid shell.
+// Allow TCP to SSH_PORT using fork+exec to avoid a shell.
 // Failures are logged but do not abort the program.
 static void allow_ssh_for_peer(char *ip)
 {
+    char port[6];
+    (void)snprintf(port, sizeof(port), "%u", (unsigned)SSH_PORT);
     char comment[sizeof("knockknock YYYYMMDD")];
     time_t now = time(NULL);
     struct tm utc;
@@ -153,7 +162,7 @@ static void allow_ssh_for_peer(char *ip)
 
     if (pid == 0) {
         // Child: absolute path and empty environment prevent PATH hijacking.
-        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", comment, NULL };
+        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", port, "proto", "tcp", "comment", comment, NULL };
         char *const ufw_envp[] = { NULL };
         execve("/usr/sbin/ufw", ufw_argv, ufw_envp);
         perror("knockknock: execve ufw");

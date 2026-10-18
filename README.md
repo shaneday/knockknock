@@ -3,8 +3,8 @@
 `knockknock` is a small UDP packet handler designed for systemd socket
 activation. systemd owns the listening socket and starts one short-lived
 handler when data arrives. The handler drains queued datagrams, logs each one's
-source, size, and authentication outcome, and adds a UFW allow rule for SSH from
-the sender when the secret matches. Payload contents are never logged.
+source, size, and authentication outcome, and adds a TCP-only UFW allow rule for
+SSH from the sender when the secret matches. Payload contents are never logged.
 
 ## Build
 
@@ -14,6 +14,16 @@ Requirements are a C11 compiler, GNU Make, and Linux headers.
 make
 make test
 ```
+
+SSH rules default to TCP port 22. For another SSH port, rebuild with:
+
+```sh
+make clean
+make CPPFLAGS=-DSSH_PORT=2222
+```
+
+This changes the firewall destination port, not the UDP knock listener or sshd's
+configuration.
 
 ## Install
 
@@ -60,7 +70,8 @@ sudo bash knockknock-prune-ufw.sh
 ```
 
 This uses SSH login events in the systemd journal, not open sessions; keep
-30 days of journal history. Undated rules are left alone. If logs are unavailable
+30 days of journal history. Cleanup handles custom TCP ports and older dated
+rules without a protocol; undated rules are left alone. If logs are unavailable
 or contain no successful logins, cleanup simply skips deletion.
 
 Copy the script to `/usr/local/sbin/`, then add to root's crontab

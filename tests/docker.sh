@@ -120,6 +120,13 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
         return 1
     }
 
+    assert_rules()
+    {
+        ufw show added > /tmp/knockknock-ufw
+        grep -Fx "ufw allow from 127.0.0.1 to any port $1 proto tcp comment '"'"'knockknock $(date -u +%Y%m%d)'"'"'" /tmp/knockknock-ufw
+        [ "$(grep -c "^ufw " /tmp/knockknock-ufw)" -eq 1 ]
+    }
+
     systemctl enable --now knockknock.socket
     rejected="knockknock: rejected knock from 127.0.0.1:"
     allowed="knockknock: ufw allowed ssh from 127.0.0.1"
@@ -155,12 +162,12 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     done
 
     echo "Testing secret repair and dated comment refresh without reset or restart"
-    ufw allow from 127.0.0.1 to any port 22 comment "knockknock 20000101"
+    ufw allow from 127.0.0.1 to any port 22 proto tcp comment "knockknock 20000101"
     printf "%s" '"$TOKEN"' > /etc/knockknock.secret
     printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
     wait_for_idle "$allowed" 1
-    ufw show added | grep -F "from 127.0.0.1" | grep -F "port 22" | grep -F "knockknock $(date -u +%Y%m%d)"
-    ufw --force delete allow from 127.0.0.1 to any port 22
+    assert_rules 22
+    ufw --force delete allow from 127.0.0.1 to any port 22 proto tcp
     allowed_baseline=$(grep -cF "$allowed" /tmp/knockknock-journal)
     ufw_baseline=$(grep -cF "knockknock: ufw " /tmp/knockknock-journal)
 
@@ -204,12 +211,20 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
         fi
 
         echo "Checking ufw rule..."
-        ufw show added | grep -F "from 127.0.0.1" | grep -F "port 22" | grep -F "knockknock $(date -u +%Y%m%d)"
+        assert_rules 22
         echo "ufw rule check passed"
         if [ "$phase" -eq 1 ]; then
-            ufw --force delete allow from 127.0.0.1 to any port 22
+            ufw --force delete allow from 127.0.0.1 to any port 22 proto tcp
         fi
     done
+
+    echo "Testing custom SSH port on next socket activation"
+    ufw --force delete allow from 127.0.0.1 to any port 22 proto tcp
+    make clean
+    make all install CPPFLAGS=-DSSH_PORT=2222
+    printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+    wait_for_idle "$allowed" "$((allowed_baseline + 3))"
+    assert_rules 2222
 '
 
 echo "Docker systemd socket-activation test passed"

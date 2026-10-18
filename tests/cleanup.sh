@@ -21,8 +21,9 @@ if [[ $# == 2 && "$*" == 'show added' ]]; then
     cat "$TEST_DIR/rules"
     exit "$UFW_STATUS"
 fi
-if [[ $# == 9 && $1 == --force && $2 == delete && $3 == allow &&
-      $4 == from && $6 == to && $7 == any && $8 == port && $9 == 22 ]]; then
+if [[ ( $# == 9 || ( $# == 11 && ${10} == proto && ${11} == tcp ) ) &&
+      $1 == --force && $2 == delete && $3 == allow &&
+      $4 == from && $6 == to && $7 == any && $8 == port && $9 =~ ^[0-9]+$ ]]; then
     printf '<%s>' "$@" >> "$TEST_DIR/deletions"
     printf '\n' >> "$TEST_DIR/deletions"
     exit 0
@@ -68,7 +69,7 @@ ufw allow from 192.0.2.5 to any port 22 comment 'knockknock 20261101'
 ufw allow from 192.0.2.6 to any port 22 comment 'knockknock'
 ufw allow from 192.0.2.7 to any port 22
 ufw allow from 192.0.2.8 to any port 22 comment 'manual 20250101'
-ufw allow from 192.0.2.9 to any port 80 comment 'knockknock 20250101'
+ufw allow from 192.0.2.9 to any port 80 proto udp comment 'knockknock 20250101'
 ufw deny from 192.0.2.10 to any port 22 comment 'knockknock 20250101'
 prefix ufw allow from 192.0.2.11 to any port 22 comment 'knockknock 20250101'
 ufw allow from 192.0.2.12 to any port 22 comment 'knockknock 20250101' suffix
@@ -78,6 +79,18 @@ ufw allow from 192.0.2.15 to any port 22 comment 'knockknock 2025xx01'
 ufw allow from example.com to any port 22 comment 'knockknock 20250101'
 ufw allow from 192.0.2.0/24 to any port 22 comment 'knockknock 20250101'
 ufw allow from 192.0.2.16;false to any port 22 comment 'knockknock 20250101'
+ufw allow from 192.0.2.1 to any port 22 proto tcp comment 'knockknock 20260918'
+ufw allow from 192.0.2.1 to any port 2222 proto tcp comment 'knockknock 20260918'
+ufw allow from 2001:db8::1 to any port 2222 proto tcp comment 'knockknock 20250101'
+ufw allow from 192.0.2.18 to any port 2222 comment 'knockknock 20250101'
+ufw allow from 192.0.2.2 to any port 22 proto tcp comment 'knockknock 20260901'
+ufw allow from 2001:db8::2 to any port 2222 proto tcp comment 'knockknock 20260901'
+ufw allow from 192.0.2.4 to any port 2222 proto tcp comment 'knockknock 20260919'
+ufw allow from 192.0.2.19 to any port 22 proto udp comment 'knockknock 20250101'
+ufw allow from 192.0.2.20 to any port ssh proto tcp comment 'knockknock 20250101'
+ufw allow from 192.0.2.21 to any port 22:2222 proto tcp comment 'knockknock 20250101'
+ufw allow from 192.0.2.22 to any port 2222;false proto tcp comment 'knockknock 20250101'
+ufw allow from 192.0.2.23 to any port 2222 proto tcp comment 'knockknock 20250101' suffix
 EOF
 
 cat > "$TEST_DIR/journal" <<'EOF'
@@ -110,8 +123,12 @@ run_case()
 }
 
 cat > "$TEST_DIR/expected" <<'EOF'
+<--force><delete><allow><from><192.0.2.18><to><any><port><2222>
+<--force><delete><allow><from><192.0.2.1><to><any><port><2222><proto><tcp>
 <--force><delete><allow><from><192.0.2.1><to><any><port><22>
+<--force><delete><allow><from><192.0.2.1><to><any><port><22><proto><tcp>
 <--force><delete><allow><from><192.0.2.3><to><any><port><22>
+<--force><delete><allow><from><2001:db8::1><to><any><port><2222><proto><tcp>
 <--force><delete><allow><from><2001:db8::1><to><any><port><22>
 EOF
 run_case 'only old, unused, exactly matching IPv4/IPv6 rules are deleted' success

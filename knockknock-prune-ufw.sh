@@ -12,13 +12,14 @@ if [[ -z "$recent" ]]; then
     exit 1
 fi
 
-pattern="^ufw allow from ([0-9a-fA-F:.]+) to any port 22 comment 'knockknock ([0-9]{8})'$"
+pattern="^ufw allow from ([0-9a-fA-F:.]+) to any port ([0-9]+)( proto tcp)? comment 'knockknock ([0-9]{8})'$"
 while IFS= read -r rule; do
     [[ $rule =~ $pattern ]] || continue
     ip=${BASH_REMATCH[1]}
-    stamp=${BASH_REMATCH[2]}
+    stamp=${BASH_REMATCH[4]}
     [[ $stamp < $cutoff ]] || continue
     if ! grep -qxF -- "$ip" <<< "$recent"; then
-        ufw --force delete allow from "$ip" to any port 22
+        read -r -a args <<< "${rule%% comment *}"
+        ufw --force delete "${args[@]:1}"
     fi
 done <<< "$rules"
