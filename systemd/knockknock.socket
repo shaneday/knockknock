@@ -1,9 +1,15 @@
+# systemd owns the UDP socket and queues packets between handler invocations.
+# Traffic starts one shared service with the socket inherited as fd 3.
+# Enable this socket, not the service: systemctl enable --now knockknock.socket
+
 [Unit]
 Description=Knockknock UDP socket
 
 [Socket]
+# All IPv4 interfaces; no IPv6 listener.
 ListenDatagram=0.0.0.0:9999
 Service=knockknock.service
 
 [Install]
+# Listen at boot without keeping the handler running.
 WantedBy=sockets.target

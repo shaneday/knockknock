@@ -1,3 +1,7 @@
+# Socket-activated handler: consume one queued UDP packet, then exit.
+# Runs as root for UFW; sandbox limits access to the rest of the host.
+# Logs: journalctl -u knockknock.service
+
 [Unit]
 Description=Process one knockknock UDP packet
 Requires=knockknock.socket
@@ -7,17 +11,25 @@ Type=exec
 ExecStart=/usr/local/bin/knockknock
 StandardOutput=journal
 StandardError=journal
+# No extra privileges via exec; existing root privileges retained.
 NoNewPrivileges=yes
+# Minimal private /dev; no host devices.
 PrivateDevices=yes
+# Isolate /tmp and /var/tmp from other services.
 PrivateTmp=yes
 ProtectControlGroups=yes
 ProtectHome=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
+# Read-only filesystem, except private temp storage and explicit exceptions.
 ProtectSystem=strict
+# Must exist; still needs root-only permissions on the host.
 ReadOnlyPaths=/etc/knockknock.secret
+# UFW persists firewall rules here.
 ReadWritePaths=/etc/ufw
+# Netlink needed for firewall updates; not a destination-address filter.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK
 RestrictNamespaces=yes
 RestrictRealtime=yes
+# Block non-native syscall ABIs.
 SystemCallArchitectures=native
