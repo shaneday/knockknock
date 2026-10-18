@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 // Let systemd queue UDP traffic between short-lived invocations.
@@ -135,6 +136,15 @@ static int peer_to_ip(const struct sockaddr_storage *peer, char ip[INET6_ADDRSTR
 // Failures are logged but do not abort the program.
 static void allow_ssh_for_peer(char *ip)
 {
+    char comment[sizeof("knockknock YYYYMMDD")];
+    time_t now = time(NULL);
+    struct tm utc;
+    if (now == (time_t)-1 || gmtime_r(&now, &utc) == NULL ||
+        strftime(comment, sizeof(comment), "knockknock %Y%m%d", &utc) == 0) {
+        fprintf(stderr, "knockknock: cannot date UFW rule\n");
+        return;
+    }
+
     pid_t pid = fork();
     if (pid < 0) {
         perror("knockknock: fork");
@@ -143,7 +153,7 @@ static void allow_ssh_for_peer(char *ip)
 
     if (pid == 0) {
         // Child: absolute path and empty environment prevent PATH hijacking.
-        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", "knockknock", NULL };
+        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", "22", "comment", comment, NULL };
         char *const ufw_envp[] = { NULL };
         execve("/usr/sbin/ufw", ufw_argv, ufw_envp);
         perror("knockknock: execve ufw");

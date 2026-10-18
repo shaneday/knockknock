@@ -103,11 +103,12 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
         fi
     done
 
-    echo "Testing secret repair without reset or restart"
+    echo "Testing secret repair and dated comment refresh without reset or restart"
+    ufw allow from 127.0.0.1 to any port 22 comment 'knockknock 20000101'
     printf '%s' '$TOKEN' > /etc/knockknock.secret
     printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
     wait_for_idle "\$allowed" 1
-    ufw show added | grep -F 'from 127.0.0.1' | grep -F 'port 22' | grep -F 'knockknock'
+    ufw show added | grep -F 'from 127.0.0.1' | grep -F 'port 22' | grep -F "knockknock \$(date -u +%Y%m%d)"
     ufw --force delete allow from 127.0.0.1 to any port 22
     allowed_baseline=\$(grep -cF "\$allowed" /tmp/knockknock-journal)
     ufw_baseline=\$(grep -cF 'knockknock: ufw ' /tmp/knockknock-journal)
@@ -152,7 +153,7 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
         fi
 
         echo "Checking ufw rule..."
-        ufw show added | grep -F 'from 127.0.0.1' | grep -F 'port 22' | grep -F 'knockknock'
+        ufw show added | grep -F 'from 127.0.0.1' | grep -F 'port 22' | grep -F "knockknock \$(date -u +%Y%m%d)"
         echo "ufw rule check passed"
         if [ "\$phase" -eq 1 ]; then
             ufw --force delete allow from 127.0.0.1 to any port 22

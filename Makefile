@@ -37,6 +37,7 @@ clean:
 
 test:
 	@echo "Running tests..."
+	bash tests/cleanup.sh
 	bash tests/docker.sh
 
 # Doesn't cache well so a bit slow to run regularly

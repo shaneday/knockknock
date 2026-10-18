@@ -49,6 +49,27 @@ journalctl -u knockknock.service
 To use another port, copy `systemd/knockknock.socket` into
 `/etc/systemd/system/`, change `ListenDatagram`, and reload systemd.
 
+## Removing old SSH rules
+
+Knocks date their UFW rules with `knockknock YYYYMMDD` (UTC), refreshing the date
+on each valid knock. Remove rules older than 30 days, keeping IPs with a
+successful SSH login in the last 30 days:
+
+```sh
+sudo bash knockknock-prune-ufw.sh
+```
+
+This uses SSH login events in the systemd journal, not open sessions; keep
+30 days of journal history. Undated rules are left alone. If logs are unavailable
+or contain no successful logins, cleanup simply skips deletion.
+
+Copy the script to `/usr/local/sbin/`, then add to root's crontab
+(`sudo crontab -e`) to run monthly:
+
+```cron
+0 3 1 * * PATH=/usr/sbin:/usr/bin /bin/bash /usr/local/sbin/knockknock-prune-ufw.sh
+```
+
 ## End-to-end tests
 
 With Docker installed and running, use this while working:
