@@ -47,18 +47,28 @@ journalctl -u knockknock.service
 To use another port, copy `systemd/knockknock.socket` into
 `/etc/systemd/system/`, change `ListenDatagram`, and reload systemd.
 
-## End-to-end test
+## End-to-end tests
 
-On macOS with [OrbStack](https://orbstack.dev/) installed and running:
+With Docker installed and running, use this while working:
 
 ```sh
-./tests/orbstack.sh
+make test
 ```
 
-The script creates a uniquely named Ubuntu machine, builds and installs the
-project inside it, sends a UDP datagram, verifies the journal entry, and
-deletes the machine on exit. Set `KEEP_VM=1` to retain a failed test machine
-for debugging, or `VM_NAME=name` to choose its name.
+On macOS with [OrbStack](https://orbstack.dev/) installed and running, run both
+Docker and OrbStack VM tests before committing (requires Docker too):
+
+```sh
+make testmore
+```
+
+The tests build and install the project in disposable Ubuntu environments,
+send valid and invalid knocks, check journal metadata without exposing payloads,
+and verify the UFW rule. Test environments are deleted on exit.
+
+For debugging failures, set `KEEP_CONTAINER=1` or `KEEP_VM=1` to retain the
+Docker container or OrbStack VM. Use `CONTAINER_NAME=name` or `VM_NAME=name`
+to choose its name.
 
 ## Design
 
