@@ -69,7 +69,7 @@ static int validate_socket_activation(void)
     return 0;
 }
 
-// Read the knock secret from SECRET_PATH into buf, stripping any trailing newline.
+// Read the first line, excluding LF/CRLF, without truncating an oversized secret.
 // Returns the secret length on success, -1 on failure.
 static int load_secret(char *buf, size_t buf_size)
 {
@@ -78,19 +78,24 @@ static int load_secret(char *buf, size_t buf_size)
         perror("knockknock: " SECRET_PATH);
         return -1;
     }
-    size_t n = fread(buf, 1, buf_size - 1, f);
+    char line[MAX_KNOCK_SIZE + 2];
+    size_t n = 0;
+    int byte = EOF;
+    while (n < sizeof(line) && (byte = fgetc(f)) != EOF && byte != '\n')
+        line[n++] = (char)byte;
     int err = ferror(f);
     fclose(f);
     if (err) {
         fprintf(stderr, "knockknock: error reading " SECRET_PATH "\n");
         return -1;
     }
-    if (n > 0 && buf[n - 1] == '\n')
+    if (byte == '\n' && n > 0 && line[n - 1] == '\r')
         n--;
-    if (n == 0) {
-        fprintf(stderr, "knockknock: " SECRET_PATH " is empty\n");
+    if (n == 0 || n > MAX_KNOCK_SIZE || n >= buf_size) {
+        fprintf(stderr, "knockknock: " SECRET_PATH " first line must contain 1-512 bytes\n");
         return -1;
     }
+    memcpy(buf, line, n);
     buf[n] = '\0';
     return (int)n;
 }

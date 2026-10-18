@@ -37,6 +37,7 @@ clean:
 
 test:
 	@echo "Running tests..."
+	bash tests/secret.sh
 	bash tests/cleanup.sh
 	bash tests/docker.sh
 

@@ -40,21 +40,23 @@ sudo systemctl enable --now knockknock.socket
 
 The file must be readable only by root.
 
-The daemon reads this file on each invocation and rejects any packet that does
-not match it byte-for-byte (trailing newline stripped). To rotate the secret,
-replace the file. An invocation uses the secret it loaded at startup; restart
-`knockknock.service` after rotation if sustained traffic is keeping it running.
+The secret is the first line: 1–512 bytes, excluding its LF or CRLF line ending.
+A final newline is optional; later lines are ignored. An empty or oversized
+first line is rejected, not truncated. Packets must match the secret byte-for-byte.
 
-If the secret is missing, unreadable, or empty, the handler logs the error and
-drains queued packets without running UFW. After fixing the file, send a fresh
-knock; no socket reset or restart is needed.
+If the secret is missing, unreadable, empty, or too long, the handler logs the
+error and drains queued packets without running UFW. After fixing the file, send
+a fresh knock; no socket reset or restart is needed since the daemon reads the
+file on each invocation.
 
 The socket listens on UDP port 9999 by default. Test it with:
 
 ```sh
-printf 'hello\n' | nc -u -w1 127.0.0.1 9999
+printf '%s' 'my-secret-passphrase' | nc -u -w1 127.0.0.1 9999
 journalctl -u knockknock.service
 ```
+
+Send the secret without a trailing newline; use `printf '%s'` or `echo -n`.
 
 To use another port, copy `systemd/knockknock.socket` into
 `/etc/systemd/system/`, change `ListenDatagram`, and reload systemd.
