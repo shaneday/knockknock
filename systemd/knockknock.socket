@@ -9,6 +9,8 @@ Description=Knockknock UDP socket
 # All IPv4 interfaces; no IPv6 listener.
 ListenDatagram=0.0.0.0:9999
 Service=knockknock.service
+# Draining batches reduces churn; no trigger limit may permanently disable knocks.
+TriggerLimitIntervalSec=0
 
 [Install]
 # Listen at boot without keeping the handler running.

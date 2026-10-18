@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -13,7 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-// Let systemd queue UDP traffic between short-lived, one-packet invocations.
+// Let systemd queue UDP traffic between short-lived invocations.
 // Implement socket activation directly to keep the binary small and standalone.
 enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512 };
 
@@ -170,13 +171,13 @@ static void allow_ssh_for_peer(char *ip)
 }
 
 
-// Receive one activated datagram, log it, and exit.
+// Drain queued datagrams, authenticating each before any firewall action.
 int main(int argc, char **argv)
 {
     unsigned char packet[MAX_KNOCK_SIZE];
     char secret[MAX_KNOCK_SIZE + 1];
     struct sockaddr_storage peer;
-    socklen_t peer_length = sizeof(peer);
+
     char peer_text[INET6_ADDRSTRLEN + 12]; /* ip + colon + 5-digit port + NUL */
     int secret_len;
     ssize_t received;
@@ -197,8 +198,7 @@ int main(int argc, char **argv)
     if (validate_socket_activation() < 0)
         return EXIT_FAILURE;
 
-    // With Accept=no datagram activation the packet is already queued; a
-    // blocking recvfrom on fd 3 is all that is needed — no poll required.
+
     if (!is_datagram_socket(SD_LISTEN_FDS_START)) {
         fprintf(stderr, "knockknock: activated fd %d is not a datagram socket\n",
                 SD_LISTEN_FDS_START);
@@ -211,42 +211,47 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Read exactly one packet for this short-lived invocation.
-    // MSG_TRUNC returns the true datagram length even when it exceeds the buffer,
-    // so an oversized knock cannot pass a prefix-based payload check.
-    do {
-        received = recvfrom(SD_LISTEN_FDS_START, packet, sizeof(packet), MSG_TRUNC,
-                            (struct sockaddr *)&peer, &peer_length);
-    } while (received < 0 && errno == EINTR);
+    for (;;) {
+        socklen_t peer_length = sizeof(peer);
 
-    if (received < 0) {
-        perror("knockknock: recvfrom");
-        return EXIT_FAILURE;
+        // Drain without blocking; systemd reactivates us if more traffic arrives.
+        // MSG_TRUNC prevents oversized packets from authenticating by prefix.
+        do {
+            received = recvfrom(SD_LISTEN_FDS_START, packet, sizeof(packet),
+                                MSG_TRUNC | MSG_DONTWAIT,
+                                (struct sockaddr *)&peer, &peer_length);
+        } while (received < 0 && errno == EINTR);
+
+        if (received < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
+            perror("knockknock: recvfrom");
+            return EXIT_FAILURE;
+        }
+
+        if (received > (ssize_t)sizeof(packet)) {
+            fprintf(stderr, "knockknock: rejected oversized datagram (%zd bytes)\n", received);
+            continue;
+        }
+
+        // Log metadata only: payloads can contain valid or mistyped secrets.
+        char ip[INET6_ADDRSTRLEN];
+        int port = peer_to_ip(&peer, ip);
+        if (port < 0)
+            (void)snprintf(peer_text, sizeof(peer_text), "unknown");
+        else
+            (void)snprintf(peer_text, sizeof(peer_text), "%s:%d", ip, port);
+        bool valid = secrets_match(packet, (size_t)received, secret, (size_t)secret_len);
+        (void)printf("knockknock: %s knock from %s (%zd bytes)\n",
+                     valid ? "accepted" : "rejected", peer_text, received);
+        (void)fflush(stdout);
+
+        if (!valid)
+            continue;
+
+        if (port >= 0)
+            allow_ssh_for_peer(ip);
+        else
+            fprintf(stderr, "knockknock: valid knock from unknown address, ufw not called\n");
     }
-
-    if (received > (ssize_t)sizeof(packet)) {
-        fprintf(stderr, "knockknock: rejected oversized datagram (%zd bytes)\n", received);
-        return EXIT_FAILURE;
-    }
-
-    // Log metadata only: payloads can contain valid or mistyped secrets.
-    char ip[INET6_ADDRSTRLEN];
-    int port = peer_to_ip(&peer, ip);
-    if (port < 0)
-        (void)snprintf(peer_text, sizeof(peer_text), "unknown");
-    else
-        (void)snprintf(peer_text, sizeof(peer_text), "%s:%d", ip, port);
-    bool valid = secrets_match(packet, (size_t)received, secret, (size_t)secret_len);
-    (void)printf("knockknock: %s knock from %s (%zd bytes)\n",
-                 valid ? "accepted" : "rejected", peer_text, received);
-    (void)fflush(stdout);
-
-    if (!valid)
-        return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
-
-    if (port >= 0)
-        allow_ssh_for_peer(ip);
-    else
-        fprintf(stderr, "knockknock: valid knock from unknown address, ufw not called\n");
-    return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 }

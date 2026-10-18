@@ -2,9 +2,9 @@
 
 `knockknock` is a small UDP packet handler designed for systemd socket
 activation. systemd owns the listening socket and starts one short-lived
-handler when data arrives. The handler receives one datagram, logs its source,
-size, and authentication outcome, and adds a UFW allow rule for SSH from the
-sender when the secret matches. Payload contents are never logged.
+handler when data arrives. The handler drains queued datagrams, logs each one's
+source, size, and authentication outcome, and adds a UFW allow rule for SSH from
+the sender when the secret matches. Payload contents are never logged.
 
 ## Build
 
@@ -35,7 +35,8 @@ The file must be readable only by root.
 
 The daemon reads this file on each invocation and rejects any packet that does
 not match it byte-for-byte (trailing newline stripped). To rotate the secret,
-replace the file — no service restart needed.
+replace the file. An invocation uses the secret it loaded at startup; restart
+`knockknock.service` after rotation if sustained traffic is keeping it running.
 
 The socket listens on UDP port 9999 by default. Test it with:
 
@@ -63,8 +64,10 @@ make testmore
 ```
 
 The tests build and install the project in disposable Ubuntu environments,
-send valid and invalid knocks, check journal metadata without exposing payloads,
-and verify the UFW rule. Test environments are deleted on exit.
+send invalid bursts (including oversized packets) and repeated separate knocks,
+then verify a valid knock still creates the UFW rule without resetting or
+restarting either unit. They also check journal metadata without exposing
+payloads. Test environments are deleted on exit.
 
 For debugging failures, set `KEEP_CONTAINER=1` or `KEEP_VM=1` to retain the
 Docker container or OrbStack VM. Use `CONTAINER_NAME=name` or `VM_NAME=name`
@@ -75,4 +78,11 @@ to choose its name.
 There is deliberately no dependency on `libsystemd`. The socket activation
 contract is small: systemd supplies file descriptors starting at 3 and sets
 `LISTEN_PID` and `LISTEN_FDS`. The program validates that contract and each
-datagram socket before receiving a packet.
+datagram socket before receiving packets.
+
+Each invocation drains the socket with nonblocking receives until the queue is
+empty. Invalid and oversized packets are rejected without running UFW. The
+service's `StartLimitIntervalSec=0` and socket's `TriggerLimitIntervalSec=0`
+disable activation limits so unauthenticated traffic cannot leave knocking
+permanently disabled. This should not be a problem, as the service is
+undetectable, so unlikely to be a target for DDoS attack.

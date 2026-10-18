@@ -93,38 +93,82 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     ldd build/knockknock
     systemctl daemon-reload
     printf "%s" '"$TOKEN"' > /etc/knockknock.secret
-    systemctl enable --now knockknock.socket
-    printf "%s-invalid" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
-    printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+    diagnostics()
+    {
+        systemctl status knockknock.socket knockknock.service --no-pager || true
+        journalctl -u knockknock.socket -u knockknock.service --no-pager -o cat
+    }
+    set -E
+    trap diagnostics ERR
 
-    for expected in "knockknock: rejected knock from 127.0.0.1:" \
-                    "knockknock: accepted knock from 127.0.0.1:" \
-                    "knockknock: ufw allowed ssh from 127.0.0.1"; do
+    wait_for_idle()
+    {
         for attempt in {1..100}; do
             journalctl -u knockknock.service --no-pager -o cat > /tmp/knockknock-journal
-            if grep -qF "$expected" /tmp/knockknock-journal; then
+            count=$(grep -cF "$1" /tmp/knockknock-journal || true)
+            state=$(systemctl show knockknock.service -p ActiveState --value)
+            if [ "$state" = failed ]; then
                 break
+            fi
+            if [ "$count" -ge "$2" ] && [ "$state" = inactive ] &&
+                systemctl is-active --quiet knockknock.socket; then
+                return 0
             fi
             sleep 0.1
         done
-        if ! grep -F "$expected" /tmp/knockknock-journal; then
-            cat /tmp/knockknock-journal
-            echo "Timed out waiting for: $expected" >&2
-            exit 1
+        echo "Timed out waiting for inactive service and $2 occurrences of: $1" >&2
+        return 1
+    }
+
+    systemctl enable --now knockknock.socket
+    rejected="knockknock: rejected knock from 127.0.0.1:"
+    allowed="knockknock: ufw allowed ssh from 127.0.0.1"
+    for phase in 1 2; do
+        if [ "$phase" -eq 1 ]; then
+            echo "Testing invalid datagram burst, including oversized input"
+            printf -v oversized "%2048s" ""
+            printf "%s%s" '"$TOKEN"' "$oversized" > /dev/udp/127.0.0.1/9999
+            for knock in {1..256}; do
+                printf "%s-invalid" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+            done
+            # UDP may drop part of the burst; do not require every packet to arrive.
+            wait_for_idle "$rejected" 1
+            grep -F "knockknock: rejected oversized datagram" /tmp/knockknock-journal
+        else
+            echo "Testing 12 separate invalid-knock invocations"
+            rejections=$(grep -cF "$rejected" /tmp/knockknock-journal)
+            for knock in {1..12}; do
+                printf "%s-invalid" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+                rejections=$((rejections + 1))
+                wait_for_idle "$rejected" "$rejections"
+            done
+        fi
+
+        ufw show added > /tmp/knockknock-ufw
+        if grep -qF "knockknock" /tmp/knockknock-ufw ||
+            [ "$(grep -cF "knockknock: ufw " /tmp/knockknock-journal || true)" -ne "$((phase - 1))" ]; then
+            cat /tmp/knockknock-ufw
+            echo "Invalid knocks changed the firewall" >&2
+            false
+        fi
+        printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+        wait_for_idle "$allowed" "$phase"
+
+        cat /tmp/knockknock-journal
+        grep -E "knockknock: rejected knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
+        grep -E "knockknock: accepted knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
+        if grep -qF '"$TOKEN"' /tmp/knockknock-journal; then
+            echo "Knock payload leaked into journal" >&2
+            false
+        fi
+
+        echo "Checking ufw rule..."
+        ufw show added | grep -F "from 127.0.0.1" | grep -F "port 22" | grep -F "knockknock"
+        echo "ufw rule check passed"
+        if [ "$phase" -eq 1 ]; then
+            ufw --force delete allow from 127.0.0.1 to any port 22
         fi
     done
-
-    cat /tmp/knockknock-journal
-    grep -E "knockknock: rejected knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
-    grep -E "knockknock: accepted knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
-    if grep -qF '"$TOKEN"' /tmp/knockknock-journal; then
-        echo "Knock payload leaked into journal" >&2
-        exit 1
-    fi
-
-    echo "Checking ufw rule..."
-    ufw show added | grep -F "from 127.0.0.1" | grep -F "port 22" | grep -F "knockknock"
-    echo "ufw rule check passed"
 '
 
 echo "Docker systemd socket-activation test passed"

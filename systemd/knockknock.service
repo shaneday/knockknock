@@ -1,10 +1,12 @@
-# Socket-activated handler: consume one queued UDP packet, then exit.
+# Socket-activated handler: drain queued UDP packets, then exit.
 # Runs as root for UFW; sandbox limits access to the rest of the host.
 # Logs: journalctl -u knockknock.service
 
 [Unit]
-Description=Process one knockknock UDP packet
+Description=Process queued knockknock UDP packets
 Requires=knockknock.socket
+# Unauthenticated traffic must not latch the socket into service-start-limit-hit.
+StartLimitIntervalSec=0
 
 [Service]
 Type=exec
