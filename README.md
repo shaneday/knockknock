@@ -2,9 +2,9 @@
 
 `knockknock` is a small UDP packet handler designed for systemd socket
 activation. systemd owns the listening socket and starts one short-lived
-handler when data arrives. The handler currently receives one datagram and
-writes its source, size, and escaped payload to the journal; packet-driven
-actions will be added later.
+handler when data arrives. The handler receives one datagram, logs its source,
+size, and authentication outcome, and adds a UFW allow rule for SSH from the
+sender when the secret matches. Payload contents are never logged.
 
 ## Build
 

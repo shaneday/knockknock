@@ -15,7 +15,7 @@
 
 // Let systemd queue UDP traffic between short-lived, one-packet invocations.
 // Implement socket activation directly to keep the binary small and standalone.
-enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512, LOG_PAYLOAD_MAX = 64 };
+enum { SD_LISTEN_FDS_START = 3, MAX_KNOCK_SIZE = 512 };
 
 // Path to the file holding the expected knock secret; override at compile time for tests.
 #ifndef SECRET_PATH
@@ -169,20 +169,6 @@ static void allow_ssh_for_peer(char *ip)
     }
 }
 
-// Print the payload with escaping so binary bytes stay log-safe.
-static void print_payload(const unsigned char *data, size_t length)
-{
-    // Escape payload bytes so logs stay readable and structurally safe.
-    for (size_t index = 0; index < length; ++index) {
-        unsigned char byte = data[index];
-        if (byte == '\\')
-            (void)fputs("\\\\", stdout);
-        else if (byte >= 0x20 && byte <= 0x7e)
-            (void)putchar((int)byte);
-        else
-            (void)printf("\\x%02x", (unsigned int)byte);
-    }
-}
 
 // Receive one activated datagram, log it, and exit.
 int main(int argc, char **argv)
@@ -243,25 +229,20 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Log every knock attempt before validating so the audit trail is complete.
+    // Log metadata only: payloads can contain valid or mistyped secrets.
     char ip[INET6_ADDRSTRLEN];
     int port = peer_to_ip(&peer, ip);
     if (port < 0)
         (void)snprintf(peer_text, sizeof(peer_text), "unknown");
     else
         (void)snprintf(peer_text, sizeof(peer_text), "%s:%d", ip, port);
-    size_t log_len = (size_t)received < LOG_PAYLOAD_MAX ? (size_t)received : LOG_PAYLOAD_MAX;
-    (void)printf("received %zd bytes from %s: ", received, peer_text);
-    print_payload(packet, log_len);
-    if (log_len < (size_t)received)
-        (void)fputs("[...]", stdout);
-    (void)putchar('\n');
+    bool valid = secrets_match(packet, (size_t)received, secret, (size_t)secret_len);
+    (void)printf("knockknock: %s knock from %s (%zd bytes)\n",
+                 valid ? "accepted" : "rejected", peer_text, received);
     (void)fflush(stdout);
 
-    if (!secrets_match(packet, (size_t)received, secret, (size_t)secret_len)) {
-        fprintf(stderr, "knockknock: rejected knock from %s\n", peer_text);
-        return EXIT_SUCCESS;
-    }
+    if (!valid)
+        return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 
     if (port >= 0)
         allow_ssh_for_peer(ip);

@@ -94,13 +94,33 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     systemctl daemon-reload
     printf "%s" '"$TOKEN"' > /etc/knockknock.secret
     systemctl enable --now knockknock.socket
+    printf "%s-invalid" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
     printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
 
-    until journalctl -u knockknock.service --no-pager -o cat | grep -F '"$TOKEN"'; do
-        sleep 0.1
+    for expected in "knockknock: rejected knock from 127.0.0.1:" \
+                    "knockknock: accepted knock from 127.0.0.1:" \
+                    "knockknock: ufw allowed ssh from 127.0.0.1"; do
+        for attempt in {1..100}; do
+            journalctl -u knockknock.service --no-pager -o cat > /tmp/knockknock-journal
+            if grep -qF "$expected" /tmp/knockknock-journal; then
+                break
+            fi
+            sleep 0.1
+        done
+        if ! grep -F "$expected" /tmp/knockknock-journal; then
+            cat /tmp/knockknock-journal
+            echo "Timed out waiting for: $expected" >&2
+            exit 1
+        fi
     done
 
-    journalctl -u knockknock.service --no-pager -o cat
+    cat /tmp/knockknock-journal
+    grep -E "knockknock: rejected knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
+    grep -E "knockknock: accepted knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
+    if grep -qF '"$TOKEN"' /tmp/knockknock-journal; then
+        echo "Knock payload leaked into journal" >&2
+        exit 1
+    fi
 
     echo "Checking ufw rule..."
     ufw show added | grep -F "from 127.0.0.1" | grep -F "port 22" | grep -F "knockknock"

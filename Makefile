@@ -38,4 +38,7 @@ clean:
 test:
 	@echo "Running tests..."
 	bash tests/docker.sh
-	# type orb && bash tests/orbstack.sh # Doesn't cache well so a bit slow to run regularly
+
+# Doesn't cache well so a bit slow to run regularly
+testmore: test
+	type orb && bash tests/orbstack.sh
