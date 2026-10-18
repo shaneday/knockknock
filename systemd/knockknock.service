@@ -25,8 +25,7 @@ ProtectKernelModules=yes
 ProtectKernelTunables=yes
 # Read-only filesystem, except private temp storage and explicit exceptions.
 ProtectSystem=strict
-# Must exist; still needs root-only permissions on the host.
-ReadOnlyPaths=/etc/knockknock.secret
+
 # UFW persists firewall rules here.
 ReadWritePaths=/etc/ufw
 # Netlink needed for firewall updates; not a destination-address filter.

@@ -72,6 +72,46 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     systemctl enable --now knockknock.socket
     rejected='knockknock: rejected knock from 127.0.0.1:'
     allowed='knockknock: ufw allowed ssh from 127.0.0.1'
+    discarded='knockknock: discarding queued datagrams: secret unavailable'
+
+    for config in missing empty; do
+        echo "Testing \$config secret"
+        if [ "\$config" = missing ]; then
+            rm /etc/knockknock.secret
+        else
+            : > /etc/knockknock.secret
+        fi
+        journalctl -u knockknock.service --no-pager -o cat > /tmp/knockknock-journal
+        discards=\$(grep -cF "\$discarded" /tmp/knockknock-journal || true)
+        discards=\$((discards + 1))
+        for knock in {1..8}; do
+            printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
+        done
+        wait_for_idle "\$discarded" "\$discards"
+        idle_discards=\$(grep -cF "\$discarded" /tmp/knockknock-journal)
+        invocation=\$(systemctl show knockknock.service -p InvocationID --value)
+        sleep 0.3
+        wait_for_idle "\$discarded" "\$discards"
+        [ "\$(grep -cF "\$discarded" /tmp/knockknock-journal)" -eq "\$idle_discards" ]
+        [ "\$(systemctl show knockknock.service -p InvocationID --value)" = "\$invocation" ]
+        ufw show added > /tmp/knockknock-ufw
+        if grep -qF 'knockknock' /tmp/knockknock-ufw ||
+            grep -qF 'knockknock: ufw ' /tmp/knockknock-journal; then
+            cat /tmp/knockknock-ufw
+            echo "Unavailable secret changed the firewall" >&2
+            false
+        fi
+    done
+
+    echo "Testing secret repair without reset or restart"
+    printf '%s' '$TOKEN' > /etc/knockknock.secret
+    printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
+    wait_for_idle "\$allowed" 1
+    ufw show added | grep -F 'from 127.0.0.1' | grep -F 'port 22' | grep -F 'knockknock'
+    ufw --force delete allow from 127.0.0.1 to any port 22
+    allowed_baseline=\$(grep -cF "\$allowed" /tmp/knockknock-journal)
+    ufw_baseline=\$(grep -cF 'knockknock: ufw ' /tmp/knockknock-journal)
+
     for phase in 1 2; do
         if [ "\$phase" -eq 1 ]; then
             echo "Testing invalid datagram burst, including oversized input"
@@ -95,13 +135,13 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
 
         ufw show added > /tmp/knockknock-ufw
         if grep -qF 'knockknock' /tmp/knockknock-ufw ||
-            [ "\$(grep -cF 'knockknock: ufw ' /tmp/knockknock-journal || true)" -ne "\$((phase - 1))" ]; then
+            [ "\$(grep -cF 'knockknock: ufw ' /tmp/knockknock-journal || true)" -ne "\$((ufw_baseline + phase - 1))" ]; then
             cat /tmp/knockknock-ufw
             echo "Invalid knocks changed the firewall" >&2
             false
         fi
         printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
-        wait_for_idle "\$allowed" "\$phase"
+        wait_for_idle "\$allowed" "\$((allowed_baseline + phase))"
 
         cat /tmp/knockknock-journal
         grep -E 'knockknock: rejected knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]' /tmp/knockknock-journal

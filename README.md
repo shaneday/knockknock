@@ -17,18 +17,15 @@ make test
 
 ## Install
 
-```sh
-sudo make install
-sudo systemctl daemon-reload
-sudo systemctl enable --now knockknock.socket
-```
-
-Before starting the socket, create the secret file that every incoming knock
-must match exactly:
+Create the secret file that every incoming knock must match exactly before
+installing and starting the socket:
 
 ```sh
 echo 'my-secret-passphrase' | sudo tee /etc/knockknock.secret
 sudo chmod 600 /etc/knockknock.secret
+sudo make install
+sudo systemctl daemon-reload
+sudo systemctl enable --now knockknock.socket
 ```
 
 The file must be readable only by root.
@@ -37,6 +34,10 @@ The daemon reads this file on each invocation and rejects any packet that does
 not match it byte-for-byte (trailing newline stripped). To rotate the secret,
 replace the file. An invocation uses the secret it loaded at startup; restart
 `knockknock.service` after rotation if sustained traffic is keeping it running.
+
+If the secret is missing, unreadable, or empty, the handler logs the error and
+drains queued packets without running UFW. After fixing the file, send a fresh
+knock; no socket reset or restart is needed.
 
 The socket listens on UDP port 9999 by default. Test it with:
 
@@ -67,7 +68,8 @@ The tests build and install the project in disposable Ubuntu environments,
 send invalid bursts (including oversized packets) and repeated separate knocks,
 then verify a valid knock still creates the UFW rule without resetting or
 restarting either unit. They also check journal metadata without exposing
-payloads. Test environments are deleted on exit.
+payloads, plus missing/empty-secret recovery without repeated activation.
+Test environments are deleted on exit.
 
 For debugging failures, set `KEEP_CONTAINER=1` or `KEEP_VM=1` to retain the
 Docker container or OrbStack VM. Use `CONTAINER_NAME=name` or `VM_NAME=name`

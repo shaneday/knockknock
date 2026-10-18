@@ -179,7 +179,7 @@ int main(int argc, char **argv)
     struct sockaddr_storage peer;
 
     char peer_text[INET6_ADDRSTRLEN + 12]; /* ip + colon + 5-digit port + NUL */
-    int secret_len;
+    int secret_len = 0;
     ssize_t received;
 
     // Reject unexpected command-line usage.
@@ -189,10 +189,6 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Fail fast if the secret is missing or empty before touching the socket.
-    secret_len = load_secret(secret, sizeof(secret));
-    if (secret_len < 0)
-        return EXIT_FAILURE;
 
     // Validate that systemd passed exactly one socket.
     if (validate_socket_activation() < 0)
@@ -228,6 +224,15 @@ int main(int argc, char **argv)
             perror("knockknock: recvfrom");
             return EXIT_FAILURE;
         }
+
+        // Consume traffic even if configuration is broken, avoiding reactivation loops.
+        if (secret_len == 0) {
+            secret_len = load_secret(secret, sizeof(secret));
+            if (secret_len < 0)
+                fprintf(stderr, "knockknock: discarding queued datagrams: secret unavailable\n");
+        }
+        if (secret_len < 0)
+            continue;
 
         if (received > (ssize_t)sizeof(packet)) {
             fprintf(stderr, "knockknock: rejected oversized datagram (%zd bytes)\n", received);
