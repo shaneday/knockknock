@@ -13,14 +13,19 @@ Type=exec
 ExecStart=/usr/local/bin/knockknock
 StandardOutput=journal
 StandardError=journal
+UMask=0077
 # No extra privileges via exec; existing root privileges retained.
 NoNewPrivileges=yes
+LockPersonality=yes
 # Minimal private /dev; no host devices.
 PrivateDevices=yes
 # Isolate /tmp and /var/tmp from other services.
 PrivateTmp=yes
+ProtectClock=yes
 ProtectControlGroups=yes
 ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 # Read-only filesystem, except private temp storage and explicit exceptions.
