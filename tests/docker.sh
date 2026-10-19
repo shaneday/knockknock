@@ -66,7 +66,7 @@ echo "Waiting for systemd to finish booting in $CONTAINER_NAME"
 # systemd overlays /tmp with a fresh tmpfs while booting, so wait for it to
 # settle before copying files in or issuing systemctl commands.
 for _ in $(seq 1 100); do
-    if docker exec "$CONTAINER_NAME" systemctl is-system-running --wait >/dev/null 2>&1; then
+    if docker exec "$CONTAINER_NAME" systemctl is-system-running >/dev/null 2>&1; then
         break
     fi
     state=$(docker exec "$CONTAINER_NAME" systemctl is-system-running 2>/dev/null || true)

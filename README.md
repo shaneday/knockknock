@@ -27,6 +27,13 @@ configuration.
 
 ## Install
 
+UFW must already be installed, configured, and enabled. Knockknock adds allow
+rules; it does not set up or enable the firewall.
+
+Knocking and the resulting SSH access use IPv4; clients need IPv4 connectivity
+to the server. If the server also has IPv6, configure UFW to protect SSH there
+separately.
+
 Create the secret file that every incoming knock must match exactly before
 installing and starting the socket:
 
