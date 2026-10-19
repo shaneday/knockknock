@@ -38,6 +38,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now knockknock.socket
 ```
 
+Installation defaults to `/usr/local`. Use `sudo make install PREFIX=/usr` for
+`/usr/bin` and `/usr/lib/systemd/system`; `BINDIR` and `SYSTEMD_UNIT_DIR` can also
+be overridden. The installed service uses the selected binary path. `DESTDIR`
+stages files for packaging without changing that path.
+
 The daemon requires a root-owned file with no group/other permissions (`600` or `400`).
 
 The secret is the first line: 1–512 bytes, excluding its LF or CRLF line ending.
@@ -60,6 +65,19 @@ Send the secret without a trailing newline; use `printf '%s'` or `echo -n`.
 
 To use another port, copy `systemd/knockknock.socket` into
 `/etc/systemd/system/`, change `ListenDatagram`, and reload systemd.
+
+## Uninstall
+
+Use the same path overrides you used for installation:
+
+```sh
+sudo systemctl disable --now knockknock.socket
+sudo systemctl stop knockknock.service
+sudo make uninstall
+sudo systemctl daemon-reload
+```
+
+The secret and existing UFW rules are kept.
 
 ## Removing old SSH rules
 
