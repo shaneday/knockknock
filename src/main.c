@@ -78,6 +78,17 @@ static int load_secret(char *buf, size_t buf_size)
         perror("knockknock: " SECRET_PATH);
         return -1;
     }
+    struct stat status;
+    if (fstat(fileno(f), &status) < 0) {
+        perror("knockknock: fstat " SECRET_PATH);
+        fclose(f);
+        return -1;
+    }
+    if (status.st_uid != 0 || (status.st_mode & 077) != 0) {
+        fprintf(stderr, "knockknock: " SECRET_PATH " must be owned by root with no group/other permissions\n");
+        fclose(f);
+        return -1;
+    }
     char line[MAX_KNOCK_SIZE + 2];
     size_t n = 0;
     int byte = EOF;

@@ -32,6 +32,7 @@ created=1
 # OrbStack mounts the macOS filesystem in its Linux machines. Run the build as
 # root so installation and systemd management need no interactive sudo prompt.
 orb -m "$VM_NAME" -u root bash -eu << EOF
+    umask 077
     mkdir /tmp/knockknock-source
     cp -R '$PROJECT_DIR'/.[!.]* '$PROJECT_DIR'/* /tmp/knockknock-source/
     cd /tmp/knockknock-source
@@ -81,13 +82,21 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     allowed='knockknock: ufw allowed ssh from 127.0.0.1'
     discarded='knockknock: discarding queued datagrams: secret unavailable'
 
-    for config in missing empty; do
+    for config in missing empty permissions owner; do
         echo "Testing \$config secret"
-        if [ "\$config" = missing ]; then
-            rm /etc/knockknock.secret
-        else
-            : > /etc/knockknock.secret
-        fi
+        case "\$config" in
+            missing) rm -f /etc/knockknock.secret ;;
+            empty) install -o 0 -g 0 -m 600 /dev/null /etc/knockknock.secret ;;
+            permissions|owner)
+                install -o 0 -g 0 -m 600 /dev/null /etc/knockknock.secret
+                printf '%s' '$TOKEN' > /etc/knockknock.secret
+                if [ "\$config" = permissions ]; then
+                    chmod 0644 /etc/knockknock.secret
+                else
+                    chown 65534 /etc/knockknock.secret
+                fi
+                ;;
+        esac
         journalctl -u knockknock.service --no-pager -o cat > /tmp/knockknock-journal
         discards=\$(grep -cF "\$discarded" /tmp/knockknock-journal || true)
         discards=\$((discards + 1))
@@ -95,6 +104,11 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
             printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
         done
         wait_for_idle "\$discarded" "\$discards"
+        case "\$config" in
+            permissions|owner)
+                grep -F 'knockknock: /etc/knockknock.secret must be owned by root with no group/other permissions' /tmp/knockknock-journal
+                ;;
+        esac
         idle_discards=\$(grep -cF "\$discarded" /tmp/knockknock-journal)
         invocation=\$(systemctl show knockknock.service -p InvocationID --value)
         sleep 0.3
@@ -112,6 +126,8 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
 
     echo "Testing secret repair and dated comment refresh without reset or restart"
     ufw allow from 127.0.0.1 to any port 22 proto tcp comment 'knockknock 20000101'
+    chown 0:0 /etc/knockknock.secret
+    chmod 600 /etc/knockknock.secret
     printf '%s' '$TOKEN' > /etc/knockknock.secret
     printf '%s' '$TOKEN' > /dev/udp/127.0.0.1/9999
     wait_for_idle "\$allowed" 1

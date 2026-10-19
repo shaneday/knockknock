@@ -1,25 +1,57 @@
+#define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE
+
+#include <sys/stat.h>
+
+static int test_fstat(int fd, struct stat *status);
+
 #define SECRET_PATH "secret"
 #define main knockknock_main
+#define fstat test_fstat
 #include "../src/main.c"
+#undef fstat
 #undef main
 
 #include <assert.h>
 
-static void check(const char *name, const void *contents, size_t size, int expected)
+static uid_t fake_owner = 0;
+static bool fstat_error = false;
+
+static int test_fstat(int fd, struct stat *status)
+{
+    if (fstat_error) {
+        errno = EIO;
+        return -1;
+    }
+    int result = fstat(fd, status);
+    // Parser fixtures must work without running the tests as root.
+    if (result == 0)
+        status->st_uid = fake_owner;
+    return result;
+}
+
+static void check_mode(const char *name, const void *contents, size_t size,
+                       int expected, mode_t mode)
 {
     FILE *file = fopen(SECRET_PATH, "wb");
     assert(file != NULL);
+    assert(fchmod(fileno(file), 0600) == 0);
     assert(fwrite(contents, 1, size, file) == size);
+    assert(fchmod(fileno(file), mode) == 0);
     assert(fclose(file) == 0);
 
     char buffer[513];
     memset(buffer, 0x7f, sizeof(buffer));
     int length = load_secret(buffer, sizeof(buffer));
+    assert(chmod(SECRET_PATH, 0600) == 0);
     if (length != expected)
         fprintf(stderr, "%s: expected %d, got %d\n", name, expected, length);
     assert(length == expected);
-    if (expected < 0)
+    if (expected < 0) {
+        for (size_t i = 0; i < sizeof(buffer); i++)
+            assert(buffer[i] == 0x7f);
         return;
+    }
 
     size_t n = (size_t)length;
     assert(memcmp(buffer, contents, n) == 0);
@@ -37,6 +69,11 @@ static void check(const char *name, const void *contents, size_t size, int expec
     payload[n] = '\r';
     payload[n + 1] = '\n';
     assert(!secrets_match(payload, n + 2, buffer, n));
+}
+
+static void check(const char *name, const void *contents, size_t size, int expected)
+{
+    check_mode(name, contents, size, expected, 0600);
 }
 
 int main(void)
@@ -87,6 +124,24 @@ int main(void)
     check("binary EOF", binary, 5, 5);
     check("binary CRLF", binary, sizeof(binary), 5);
     check("NUL-only secret", "\0\n", 2, 1);
+
+    check_mode("owner read-only", "key", 3, 3, 0400);
+    check_mode("owner read/write", "key", 3, 3, 0600);
+    const mode_t rejected_modes[] = {
+        0644, 0640, 0620, 0604, 0602, 0610, 0601
+    };
+    for (size_t i = 0; i < sizeof(rejected_modes) / sizeof(rejected_modes[0]); i++) {
+        char name[64];
+        snprintf(name, sizeof(name), "reject mode %04o", (unsigned int)rejected_modes[i]);
+        check_mode(name, "key", 3, -1, rejected_modes[i]);
+    }
+
+    fake_owner = 1;
+    check("reject non-root owner with mode 0600", "key", 3, -1);
+    fake_owner = 0;
+    fstat_error = true;
+    check("reject fstat failure", "key", 3, -1);
+    fstat_error = false;
 
     assert(unlink(SECRET_PATH) == 0);
     char buffer[513];

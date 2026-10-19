@@ -31,23 +31,23 @@ Create the secret file that every incoming knock must match exactly before
 installing and starting the socket:
 
 ```sh
-echo 'my-secret-passphrase' | sudo tee /etc/knockknock.secret
-sudo chmod 600 /etc/knockknock.secret
+sudo install -o root -g root -m 600 /dev/null /etc/knockknock.secret
+sudo vim /etc/knockknock.secret
 sudo make install
 sudo systemctl daemon-reload
 sudo systemctl enable --now knockknock.socket
 ```
 
-The file must be readable only by root.
+The daemon requires a root-owned file with no group/other permissions (`600` or `400`).
 
 The secret is the first line: 1–512 bytes, excluding its LF or CRLF line ending.
 A final newline is optional; later lines are ignored. An empty or oversized
 first line is rejected, not truncated. Packets must match the secret byte-for-byte.
 
-If the secret is missing, unreadable, empty, or too long, the handler logs the
-error and drains queued packets without running UFW. After fixing the file, send
-a fresh knock; no socket reset or restart is needed since the daemon reads the
-file on each invocation.
+If the secret file has the wrong owner or permissions, or the secret is missing,
+unreadable, empty, or too long, the handler logs the error and drains queued
+packets without running UFW. Fix it and send a fresh knock; no socket reset or
+restart is needed since the daemon reads the file on each invocation.
 
 The socket listens on UDP port 9999 by default. Test it with:
 
