@@ -147,3 +147,17 @@ service's `StartLimitIntervalSec=0` and socket's `TriggerLimitIntervalSec=0`
 disable activation limits so unauthenticated traffic cannot leave knocking
 permanently disabled. This should not be a problem, as the service is
 undetectable, so unlikely to be a target for DDoS attack.
+
+## Security
+
+The secret is a plain text string, there is no attempt to provide cryptographic
+security, and the secret is visible to intermediary routers on the client to
+server network path.
+
+The intension is only for knockknock to provide an *additional* layer of
+security, in many cases allowing the firewall to make the machine completely
+invisible to all IPs except those who have successfully knocked.
+
+A future version may add symmetric encryption to the knock payload, but that
+will require a substantial increase in code complexity, which is in direct
+conflict with the preliminary goals.
