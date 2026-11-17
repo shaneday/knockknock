@@ -90,10 +90,13 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     cd /opt/knockknock
     make clean
     make all install
+    [ "$(stat -c "%u:%a" /etc/knockknock.secret)" = "0:600" ]
+    grep -Eq "^[0-9a-f]{64}$" /etc/knockknock.secret
+    printf "%s" '"$TOKEN"' > /etc/knockknock.secret
+    make install
+    [ "$(cat /etc/knockknock.secret)" = '"$TOKEN"' ]
     ls -l build/knockknock
     ldd build/knockknock
-    systemctl daemon-reload
-    printf "%s" '"$TOKEN"' > /etc/knockknock.secret
     diagnostics()
     {
         systemctl status knockknock.socket knockknock.service --no-pager || true
@@ -128,7 +131,6 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
         [ "$(grep -c "^ufw " /tmp/knockknock-ufw)" -eq 1 ]
     }
 
-    systemctl enable --now knockknock.socket
     rejected="knockknock: rejected "
     allowed="knockknock: ufw allowed ssh from 127.0.0.1"
     discarded="knockknock: discarding queued datagrams: secret unavailable"

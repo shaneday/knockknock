@@ -62,6 +62,39 @@ run_case overrides /opt/knock/bin /opt/knock/units \
 run_case spaces '/opt/knock tools/bin' /opt/knock/units \
     'BINDIR=/opt/knock tools/bin' SYSTEMD_UNIT_DIR=/opt/knock/units
 
+# Test live unit management with a mock; never call the host's systemctl.
+cat > "$TEST_DIR/systemctl" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
+EOF
+chmod +x "$TEST_DIR/systemctl"
+log="$TEST_DIR/systemctl.log"
+live="$TEST_DIR/live"
+secret="$TEST_DIR/live.secret"
+PATH="$TEST_DIR:$PATH" SYSTEMCTL_LOG="$log" make install \
+    "BINDIR=$live/bin" "SYSTEMD_UNIT_DIR=$live/units" "SECRET_FILE=$secret" > "$TEST_DIR/install.out"
+[[ $(cat "$secret") =~ ^[0-9a-f]{64}$ ]] || fail 'generated secret is not 64 hex characters'
+[[ -n $(find "$secret" -prune -perm 0600 -print) ]] || fail 'generated secret is not mode 0600'
+grep -Fq "Created $secret" "$TEST_DIR/install.out" || fail 'missing secret reminder'
+printf '%s\n' 'daemon-reload' 'enable --now knockknock.socket' > "$TEST_DIR/expected"
+cmp "$TEST_DIR/expected" "$log" || fail 'install did not reload and enable the socket'
+cp "$secret" "$TEST_DIR/original-secret"
+PATH="$TEST_DIR:$PATH" SYSTEMCTL_LOG="$log" make install \
+    "BINDIR=$live/bin" "SYSTEMD_UNIT_DIR=$live/units" "SECRET_FILE=$secret" > "$TEST_DIR/install.out"
+cmp "$secret" "$TEST_DIR/original-secret" || fail 'install replaced the existing secret'
+! grep -Fq "Created $secret" "$TEST_DIR/install.out" || fail 'install reported replacing the secret'
+printf '%s\n' 'daemon-reload' 'enable --now knockknock.socket' >> "$TEST_DIR/expected"
+cmp "$TEST_DIR/expected" "$log" || fail 'reinstall did not reload and enable the socket'
+PATH="$TEST_DIR:$PATH" SYSTEMCTL_LOG="$log" make uninstall \
+    "BINDIR=$live/bin" "SYSTEMD_UNIT_DIR=$live/units" "SECRET_FILE=$secret"
+printf '%s\n' 'disable --now knockknock.socket' 'stop knockknock.service' \
+    'daemon-reload' >> "$TEST_DIR/expected"
+cmp "$TEST_DIR/expected" "$log" || fail 'uninstall did not stop units and reload'
+[[ ! -e "$live/bin/knockknock" && ! -e "$live/units/knockknock.socket" &&
+   ! -e "$live/units/knockknock.service" ]] || fail 'live uninstall left files'
+cmp "$secret" "$TEST_DIR/original-secret" || fail 'uninstall removed or changed the secret'
+printf 'PASS: live install/uninstall manages systemd units and secret\n'
+
 # Isolate collision files so the dry run cannot touch the working tree.
 mkdir "$TEST_DIR/phony"
 cp Makefile "$TEST_DIR/phony/Makefile"

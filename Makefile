@@ -9,6 +9,8 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 SYSTEMD_UNIT_DIR ?= $(PREFIX)/lib/systemd/system
 DESTDIR ?=
+# Test override only; the handler still reads /etc/knockknock.secret.
+SECRET_FILE ?= /etc/knockknock.secret
 
 TARGET := build/knockknock
 OBJECTS := build/main.o
@@ -32,11 +34,19 @@ install: $(TARGET)
 	install -m 0644 systemd/knockknock.socket "$(DESTDIR)$(SYSTEMD_UNIT_DIR)/"
 	sed 's|^ExecStart=.*|ExecStart="$(BINDIR)/knockknock"|' systemd/knockknock.service > build/knockknock.service
 	install -m 0644 build/knockknock.service "$(DESTDIR)$(SYSTEMD_UNIT_DIR)/"
+	@[ -n "$(DESTDIR)" ] || [ -e "$(SECRET_FILE)" ] || \
+		{ bash -o pipefail -c 'umask 077; set -C; od -An -N32 -tx1 /dev/urandom | tr -d " \n" > "$(SECRET_FILE)"' && \
+		  echo "Created $(SECRET_FILE); keep the random secret or edit it before knocking."; }
+	@[ -n "$(DESTDIR)" ] || systemctl daemon-reload
+	@[ -n "$(DESTDIR)" ] || systemctl enable --now knockknock.socket
 
 uninstall:
+	@[ -n "$(DESTDIR)" ] || systemctl disable --now knockknock.socket
+	@[ -n "$(DESTDIR)" ] || systemctl stop knockknock.service
 	rm -f "$(DESTDIR)$(BINDIR)/knockknock" \
 		"$(DESTDIR)$(SYSTEMD_UNIT_DIR)/knockknock.socket" \
 		"$(DESTDIR)$(SYSTEMD_UNIT_DIR)/knockknock.service"
+	@[ -n "$(DESTDIR)" ] || systemctl daemon-reload
 
 clean:
 	rm -rf build

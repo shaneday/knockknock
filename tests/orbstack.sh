@@ -38,11 +38,10 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     cd /tmp/knockknock-source
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -qq build-essential ufw
+    printf '%s' '$TOKEN' > /etc/knockknock.secret
     make all install
     ls -l build/knockknock
     ldd build/knockknock
-    systemctl daemon-reload
-    printf '%s' '$TOKEN' > /etc/knockknock.secret
     diagnostics()
     {
         systemctl status knockknock.socket knockknock.service --no-pager || true
@@ -77,7 +76,6 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
         [ "\$(grep -c '^ufw ' /tmp/knockknock-ufw)" -eq 1 ]
     }
 
-    systemctl enable --now knockknock.socket
     rejected='knockknock: rejected '
     allowed='knockknock: ufw allowed ssh from 127.0.0.1'
     discarded='knockknock: discarding queued datagrams: secret unavailable'

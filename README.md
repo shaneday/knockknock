@@ -35,21 +35,25 @@ Knocking and the resulting SSH access use IPv4; clients need IPv4 connectivity
 to the server. If the server also has IPv6, configure UFW to protect SSH there
 separately.
 
-Create the secret file that every incoming knock must match exactly before
-installing and starting the socket:
+Install and start the socket:
 
 ```sh
-sudo install -o root -g root -m 600 /dev/null /etc/knockknock.secret
-sudo vim /etc/knockknock.secret
 sudo make install
-sudo systemctl daemon-reload
-sudo systemctl enable --now knockknock.socket
 ```
+
+If `/etc/knockknock.secret` is absent, installation creates a root-owned, mode
+`600` file containing a random 64-character hex secret and reminds you to edit
+it if desired. Keep the random value or replace it with another strong secret;
+securely transfer the secret to your client. An existing secret is never
+overwritten, even if it is empty or invalid.
 
 Installation defaults to `/usr/local`. Use `sudo make install PREFIX=/usr` for
 `/usr/bin` and `/usr/lib/systemd/system`; `BINDIR` and `SYSTEMD_UNIT_DIR` can also
 be overridden. The installed service uses the selected binary path. `DESTDIR`
-stages files for packaging without changing that path.
+stages files for packaging without changing that path or managing the host's
+systemd units. Without `DESTDIR`, `make install` reloads systemd and enables and
+starts `knockknock.socket`; configure and enable UFW first. To supply your own
+secret, create `/etc/knockknock.secret` as root with mode `600` before installing.
 
 The daemon requires a root-owned file with no group/other permissions (`600` or `400`).
 
@@ -65,11 +69,12 @@ restart is needed since the daemon reads the file on each invocation.
 The socket listens on UDP port 9999 by default. Test it with:
 
 ```sh
-printf '%s' 'my-secret-passphrase' | nc -u -w1 127.0.0.1 9999
+printf '%s' '<your-secret>' | nc -u -w1 127.0.0.1 9999
 journalctl -u knockknock.service
 ```
 
-Send the secret without a trailing newline; use `printf '%s'` or `echo -n`.
+Replace `<your-secret>` with the actual secret, without a trailing newline; use
+`printf '%s'` or `echo -n`.
 
 To use another port, copy `systemd/knockknock.socket` into
 `/etc/systemd/system/`, change `ListenDatagram`, and reload systemd.
@@ -79,13 +84,11 @@ To use another port, copy `systemd/knockknock.socket` into
 Use the same path overrides you used for installation:
 
 ```sh
-sudo systemctl disable --now knockknock.socket
-sudo systemctl stop knockknock.service
 sudo make uninstall
-sudo systemctl daemon-reload
 ```
 
-The secret and existing UFW rules are kept.
+`make uninstall` disables and stops the socket, stops the service, removes the
+installed files, and reloads systemd. The secret and existing UFW rules are kept.
 
 ## Removing old SSH rules
 
