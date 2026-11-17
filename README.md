@@ -28,8 +28,9 @@ configuration.
 
 ## Install
 
-UFW must already be installed, configured, and enabled. Knockknock adds allow
-rules; it does not set up or enable the firewall.
+UFW must already be installed, configured, and enabled. Installation adds an
+IPv4 allow rule for UDP port 9999 with the comment `knockknock UDP listener`
+before starting the socket. Knockknock does not set up or enable the firewall.
 
 Knocking and the resulting SSH access use IPv4; clients need IPv4 connectivity
 to the server. If the server also has IPv6, configure UFW to protect SSH there
@@ -77,7 +78,8 @@ Replace `<your-secret>` with the actual secret, without a trailing newline; use
 `printf '%s'` or `echo -n`.
 
 To use another port, copy `systemd/knockknock.socket` into
-`/etc/systemd/system/`, change `ListenDatagram`, and reload systemd.
+`/etc/systemd/system/`, change `ListenDatagram`, and reload systemd. Update the
+UFW listener rule separately: installation only adds the default UDP/9999 rule.
 
 ## Uninstall
 
@@ -88,7 +90,9 @@ sudo make uninstall
 ```
 
 `make uninstall` disables and stops the socket, stops the service, removes the
-installed files, and reloads systemd. The secret and existing UFW rules are kept.
+installed files, and reloads systemd. The secret and existing UFW rules are kept,
+including the UDP/9999 listener rule; remove that rule manually if it is no
+longer needed.
 
 ## Removing old SSH rules
 

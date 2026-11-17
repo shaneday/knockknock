@@ -73,7 +73,8 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
     {
         ufw show added > /tmp/knockknock-ufw
         grep -Fx "ufw allow from 127.0.0.1 to any port \$1 proto tcp comment 'knockknock \$(date -u +%Y%m%d)'" /tmp/knockknock-ufw
-        [ "\$(grep -c '^ufw ' /tmp/knockknock-ufw)" -eq 1 ]
+        grep -Fx "ufw allow 9999/udp comment 'knockknock UDP listener'" /tmp/knockknock-ufw
+        [ "\$(grep -c '^ufw ' /tmp/knockknock-ufw)" -eq 2 ]
     }
 
     rejected='knockknock: rejected '
@@ -114,7 +115,7 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
         [ "\$(grep -cF "\$discarded" /tmp/knockknock-journal)" -eq "\$idle_discards" ]
         [ "\$(systemctl show knockknock.service -p InvocationID --value)" = "\$invocation" ]
         ufw show added > /tmp/knockknock-ufw
-        if grep -qF 'knockknock' /tmp/knockknock-ufw ||
+        if grep -Eq 'knockknock [0-9]{8}' /tmp/knockknock-ufw ||
             grep -qF 'knockknock: ufw ' /tmp/knockknock-journal; then
             cat /tmp/knockknock-ufw
             echo "Unavailable secret changed the firewall" >&2
@@ -156,7 +157,7 @@ orb -m "$VM_NAME" -u root bash -eu << EOF
         fi
 
         ufw show added > /tmp/knockknock-ufw
-        if grep -qF 'knockknock' /tmp/knockknock-ufw ||
+        if grep -Eq 'knockknock [0-9]{8}' /tmp/knockknock-ufw ||
             [ "\$(grep -cF 'knockknock: ufw ' /tmp/knockknock-journal || true)" -ne "\$((ufw_baseline + phase - 1))" ]; then
             cat /tmp/knockknock-ufw
             echo "Invalid knocks changed the firewall" >&2
