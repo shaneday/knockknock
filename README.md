@@ -2,9 +2,10 @@
 
 `knockknock` is a small UDP packet handler designed for systemd socket
 activation. systemd owns the listening socket and starts one short-lived
-handler when data arrives. The handler drains queued datagrams, logs each one's
-source, size, and authentication outcome, and adds a TCP-only UFW allow rule for
-SSH from the sender when the secret matches. Payload contents are never logged.
+handler when data arrives. The handler drains queued datagrams, logs accepted
+knocks with source and size, summarizes rejected knocks, and adds a TCP-only UFW
+allow rule for SSH from the sender when the secret matches. Payload contents are
+never logged.
 
 ## Build
 
@@ -126,8 +127,9 @@ make testmore
 The tests build and install the project in disposable Ubuntu environments,
 send invalid bursts (including oversized packets) and repeated separate knocks,
 then verify a valid knock still creates the UFW rule without resetting or
-restarting either unit. They also check journal metadata without exposing
-payloads, plus missing/empty-secret recovery without repeated activation.
+restarting either unit. They check accepted-knock metadata and rejected-knock
+summaries without exposing payloads, plus missing/empty-secret recovery without
+repeated activation.
 Test environments are deleted on exit.
 
 For debugging failures, set `KEEP_CONTAINER=1` or `KEEP_VM=1` to retain the
@@ -142,11 +144,16 @@ contract is small: systemd supplies file descriptors starting at 3 and sets
 datagram socket before receiving packets.
 
 Each invocation drains the socket with nonblocking receives until the queue is
-empty. Invalid and oversized packets are rejected without running UFW. The
+empty. Invalid and oversized packets are rejected without running UFW. Their
+logs are summarized once per second during a busy invocation and again when it
+becomes idle; accepted knocks and UFW outcomes remain individually logged. The
 service's `StartLimitIntervalSec=0` and socket's `TriggerLimitIntervalSec=0`
 disable activation limits so unauthenticated traffic cannot leave knocking
-permanently disabled. This should not be a problem, as the service is
-undetectable, so unlikely to be a target for DDoS attack.
+permanently disabled. Log aggregation reduces journal load, but does not bound
+CPU use or repeated service starts under sustained or spaced-out traffic. If
+UDP/9999 is publicly reachable, apply an ingress rate limit appropriate to
+expected clients and test valid knocks under load; a strict limit can drop
+legitimate knocks as well.
 
 ## Security
 

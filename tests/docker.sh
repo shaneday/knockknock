@@ -129,7 +129,7 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     }
 
     systemctl enable --now knockknock.socket
-    rejected="knockknock: rejected knock from 127.0.0.1:"
+    rejected="knockknock: rejected "
     allowed="knockknock: ufw allowed ssh from 127.0.0.1"
     discarded="knockknock: discarding queued datagrams: secret unavailable"
 
@@ -197,7 +197,7 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
             done
             # UDP may drop part of the burst; do not require every packet to arrive.
             wait_for_idle "$rejected" 1
-            grep -F "knockknock: rejected oversized datagram" /tmp/knockknock-journal
+            grep -E "knockknock: rejected [0-9]+ knocks \\([1-9][0-9]* oversized\\)" /tmp/knockknock-journal
         else
             echo "Testing 12 separate invalid-knock invocations"
             rejections=$(grep -cF "$rejected" /tmp/knockknock-journal)
@@ -219,7 +219,7 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
         wait_for_idle "$allowed" "$((allowed_baseline + phase))"
 
         cat /tmp/knockknock-journal
-        grep -E "knockknock: rejected knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
+        grep -E "knockknock: rejected [0-9]+ knocks \\([0-9]+ oversized\\)" /tmp/knockknock-journal
         grep -E "knockknock: accepted knock from 127[.]0[.]0[.]1:[0-9]+ [(][0-9]+ bytes[)]" /tmp/knockknock-journal
         if grep -qF '"$TOKEN"' /tmp/knockknock-journal; then
             echo "Knock payload leaked into journal" >&2

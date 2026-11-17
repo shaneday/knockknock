@@ -206,6 +206,14 @@ static void allow_ssh_for_peer(char *ip)
 }
 
 
+static void log_rejections(unsigned long rejected, unsigned long oversized)
+{
+    if (rejected != 0) {
+        (void)printf("knockknock: rejected %lu knocks (%lu oversized)\n", rejected, oversized);
+        (void)fflush(stdout);
+    }
+}
+
 // Drain queued datagrams, authenticating each before any firewall action.
 int main(int argc, char **argv)
 {
@@ -216,6 +224,8 @@ int main(int argc, char **argv)
     char peer_text[INET6_ADDRSTRLEN + 12]; /* ip + colon + 5-digit port + NUL */
     int secret_len = 0;
     ssize_t received;
+    unsigned long rejected = 0, oversized = 0;
+    time_t last_report = time(NULL);
 
     // Reject unexpected command-line usage.
     (void)argv;
@@ -254,8 +264,11 @@ int main(int argc, char **argv)
         } while (received < 0 && errno == EINTR);
 
         if (received < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            int receive_error = errno;
+            log_rejections(rejected, oversized);
+            if (receive_error == EAGAIN || receive_error == EWOULDBLOCK)
                 return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
+            errno = receive_error;
             perror("knockknock: recvfrom");
             return EXIT_FAILURE;
         }
@@ -269,8 +282,17 @@ int main(int argc, char **argv)
         if (secret_len < 0)
             continue;
 
-        if (received > (ssize_t)sizeof(packet)) {
-            fprintf(stderr, "knockknock: rejected oversized datagram (%zd bytes)\n", received);
+        bool too_large = received > (ssize_t)sizeof(packet);
+        if (too_large || !secrets_match(packet, (size_t)received, secret, (size_t)secret_len)) {
+            rejected++;
+            if (too_large)
+                oversized++;
+            time_t now = time(NULL);
+            if (now != last_report) {
+                log_rejections(rejected, oversized);
+                rejected = oversized = 0;
+                last_report = now;
+            }
             continue;
         }
 
@@ -281,13 +303,8 @@ int main(int argc, char **argv)
             (void)snprintf(peer_text, sizeof(peer_text), "unknown");
         else
             (void)snprintf(peer_text, sizeof(peer_text), "%s:%d", ip, port);
-        bool valid = secrets_match(packet, (size_t)received, secret, (size_t)secret_len);
-        (void)printf("knockknock: %s knock from %s (%zd bytes)\n",
-                     valid ? "accepted" : "rejected", peer_text, received);
+        (void)printf("knockknock: accepted knock from %s (%zd bytes)\n", peer_text, received);
         (void)fflush(stdout);
-
-        if (!valid)
-            continue;
 
         if (port >= 0)
             allow_ssh_for_peer(ip);
