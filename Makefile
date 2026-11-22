@@ -57,6 +57,7 @@ test:
 	bash tests/install.sh
 	bash tests/secret.sh
 	bash tests/cleanup.sh
+	bash tests/list.sh
 	bash tests/docker.sh
 
 # Doesn't cache well so a bit slow to run regularly

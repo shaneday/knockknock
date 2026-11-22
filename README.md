@@ -116,6 +116,17 @@ Copy the script to `/usr/local/sbin/`, then add to root's crontab
 0 3 1 * * PATH=/usr/sbin:/usr/bin /bin/bash /usr/local/sbin/knockknock-prune-ufw.sh
 ```
 
+## Listing allowed IPs and recent SSH users seen on each IP
+
+```sh
+sudo bash knockknock-list.sh
+```
+
+This report prints one line per dated knock-created TCP allow rule: `YYYYMMDD IP
+username1,username2` (or `-` when none). Usernames are distinct accounts
+observed from that IP in the last 30 days of the `ssh.service`/`sshd.service`
+journal.
+
 ## End-to-end tests
 
 With Docker installed and running, use this while working:
