@@ -38,8 +38,9 @@ install: $(TARGET)
 		{ bash -o pipefail -c 'umask 077; set -C; od -An -N32 -tx1 /dev/urandom | tr -d " \n" > "$(SECRET_FILE)"' && \
 		  echo "Created $(SECRET_FILE); keep the random secret or edit it before knocking."; }
 	@[ -n "$(DESTDIR)" ] || systemctl daemon-reload
-	@[ -n "$(DESTDIR)" ] || ufw allow from 0.0.0.0/0 to any port 9999 proto udp comment 'knockknock UDP listener'
+	@[ -n "$(DESTDIR)" ] || { ufw allow from 0.0.0.0/0 to any port 9999 proto udp comment 'knockknock UDP listener' >/dev/null 2>&1 ||: ; }
 	@[ -n "$(DESTDIR)" ] || systemctl enable --now knockknock.socket
+	@[ -n "$(DESTDIR)" ] || { type firehol >/dev/null 2>&1 && echo "FireHOL detected; see README.md for FireHOL setup." ||: ; }
 
 uninstall:
 	@[ -n "$(DESTDIR)" ] || systemctl disable --now knockknock.socket

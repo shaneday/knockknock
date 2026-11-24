@@ -155,8 +155,32 @@ static int peer_to_ip(const struct sockaddr_storage *peer, char ip[INET6_ADDRSTR
     return port;
 }
 
-// Allow TCP to SSH_PORT using fork+exec to avoid a shell.
-// Failures are logged but do not abort the program.
+// Run a firewall command without a shell; missing optional backends stay quiet.
+static int run_firewall(const char *path, char *const argv[])
+{
+    pid_t pid = fork();
+    if (pid < 0)
+        return -1;
+
+    if (pid == 0) {
+        int null_fd = open("/dev/null", O_WRONLY);
+        if (null_fd < 0 || dup2(null_fd, STDOUT_FILENO) < 0 ||
+            dup2(null_fd, STDERR_FILENO) < 0)
+            _exit(127);
+        if (null_fd > STDERR_FILENO)
+            (void)close(null_fd);
+        char *const envp[] = { NULL };
+        execve(path, argv, envp);
+        _exit(127);
+    }
+
+    int status;
+    if (waitpid(pid, &status, 0) < 0)
+        return -1;
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+// Either UFW or the admin's FireHOL ipset may grant SSH access.
 static void allow_ssh_for_peer(char *ip)
 {
     char port[6];
@@ -164,45 +188,23 @@ static void allow_ssh_for_peer(char *ip)
     char comment[sizeof("knockknock YYYYMMDD")];
     time_t now = time(NULL);
     struct tm utc;
-    if (now == (time_t)-1 || gmtime_r(&now, &utc) == NULL ||
-        strftime(comment, sizeof(comment), "knockknock %Y%m%d", &utc) == 0) {
-        fprintf(stderr, "knockknock: cannot date UFW rule\n");
-        return;
+    int ufw_status = -1;
+    if (now != (time_t)-1 && gmtime_r(&now, &utc) != NULL &&
+        strftime(comment, sizeof(comment), "knockknock %Y%m%d", &utc) != 0) {
+        char *const argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", port,
+                               "proto", "tcp", "comment", comment, NULL };
+        ufw_status = run_firewall("/usr/sbin/ufw", argv);
     }
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("knockknock: fork");
-        return;
-    }
-
-    if (pid == 0) {
-        // Child: absolute path and empty environment prevent PATH hijacking.
-        char *const ufw_argv[] = { "ufw", "allow", "from", ip, "to", "any", "port", port, "proto", "tcp", "comment", comment, NULL };
-        char *const ufw_envp[] = { NULL };
-        execve("/usr/sbin/ufw", ufw_argv, ufw_envp);
-        perror("knockknock: execve ufw");
-        _exit(127);
-    }
-
-    // Parent: wait for child and log the result.
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
-        perror("knockknock: waitpid");
-        return;
-    }
-
-    if (WIFEXITED(status)) {
-        int code = WEXITSTATUS(status);
-        if (code == 0)
-            (void)fprintf(stderr, "knockknock: ufw allowed ssh from %s\n", ip);
-        else
-            (void)fprintf(stderr, "knockknock: ufw exited with code %d for %s\n", code, ip);
-    } else if (WIFSIGNALED(status)) {
-        (void)fprintf(stderr, "knockknock: ufw killed by signal %d\n", WTERMSIG(status));
-    } else {
-        (void)fprintf(stderr, "knockknock: ufw unknown child status for %s\n", ip);
-    }
+    char *const ipset_argv[] = { "ipset", "-exist", "add", "knockknock_ssh", ip, NULL };
+    int ipset_status = run_firewall("/usr/sbin/ipset", ipset_argv);
+    if (ufw_status == 0)
+        (void)fprintf(stderr, "knockknock: ufw allowed ssh from %s\n", ip);
+    if (ipset_status == 0)
+        (void)fprintf(stderr, "knockknock: ipset added ssh source %s\n", ip);
+    if (ufw_status != 0 && ipset_status != 0)
+        (void)fprintf(stderr, "knockknock: neither ufw nor ipset allowed ssh from %s (ufw %d, ipset %d)\n",
+                      ip, ufw_status, ipset_status);
 }
 
 
@@ -246,7 +248,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Prevent the socket from leaking into the ufw child process.
+    // Prevent the socket from leaking into firewall child processes.
     if (fcntl(SD_LISTEN_FDS_START, F_SETFD, FD_CLOEXEC) < 0) {
         perror("knockknock: fcntl FD_CLOEXEC");
         return EXIT_FAILURE;
@@ -309,6 +311,6 @@ int main(int argc, char **argv)
         if (port >= 0)
             allow_ssh_for_peer(ip);
         else
-            fprintf(stderr, "knockknock: valid knock from unknown address, ufw not called\n");
+            fprintf(stderr, "knockknock: valid knock from unknown address, firewall not updated\n");
     }
 }

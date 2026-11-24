@@ -43,7 +43,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq && \
-    apt-get install -qq build-essential systemd systemd-sysv bash ufw iptables && \
+    apt-get install -qq build-essential systemd systemd-sysv bash ufw iptables ipset && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     update-alternatives --set iptables /usr/sbin/iptables-legacy && \
@@ -244,6 +244,23 @@ docker exec "$CONTAINER_NAME" bash -eu -c '
     printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
     wait_for_idle "$allowed" "$((allowed_baseline + 3))"
     assert_rules 2222
+
+    echo "Testing ipset alongside UFW, without UFW, and with neither backend"
+    ipset create knockknock_ssh hash:ip family inet
+    printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+    wait_for_idle "knockknock: ipset added ssh source 127.0.0.1" 1
+    ipset test knockknock_ssh 127.0.0.1
+    assert_rules 2222
+    mv /usr/sbin/ufw /usr/sbin/ufw.disabled
+    printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+    wait_for_idle "knockknock: ipset added ssh source 127.0.0.1" 2
+    ipset destroy knockknock_ssh
+    printf "%s" '"$TOKEN"' > /dev/udp/127.0.0.1/9999
+    wait_for_idle "knockknock: neither ufw nor ipset allowed ssh from 127.0.0.1" 1
+    if grep -qE "The set with the given name does not exist|execve (ufw|ipset)" /tmp/knockknock-journal; then
+        echo "Optional firewall command leaked an error to the journal" >&2
+        false
+    fi
 '
 
 echo "Docker systemd socket-activation test passed"

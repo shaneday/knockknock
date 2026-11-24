@@ -3,9 +3,9 @@
 `knockknock` is a small UDP packet handler designed for systemd socket
 activation. systemd owns the listening socket and starts one short-lived
 handler when data arrives. The handler drains queued datagrams, logs accepted
-knocks with source and size, summarizes rejected knocks, and adds a TCP-only UFW
-allow rule for SSH from the sender when the secret matches. Payload contents are
-never logged.
+knocks with source and size, summarizes rejected knocks, and grants TCP-only SSH
+access from the sender through UFW or an admin-managed ipset when the secret
+matches. Payload contents are never logged.
 
 ## Build
 
@@ -33,8 +33,8 @@ IPv4 allow rule for UDP port 9999 with the comment `knockknock UDP listener`
 before starting the socket. Knockknock does not set up or enable the firewall.
 
 Knocking and the resulting SSH access use IPv4; clients need IPv4 connectivity
-to the server. If the server also has IPv6, configure UFW to protect SSH there
-separately.
+to the server. If the server also has IPv6, configure the firewall to protect
+SSH there separately.
 
 Install and start the socket:
 
@@ -53,8 +53,8 @@ Installation defaults to `/usr/local`. Use `sudo make install PREFIX=/usr` for
 be overridden. The installed service uses the selected binary path. `DESTDIR`
 stages files for packaging without changing that path or managing the host's
 systemd units. Without `DESTDIR`, `make install` reloads systemd and enables and
-starts `knockknock.socket`; configure and enable UFW first. To supply your own
-secret, create `/etc/knockknock.secret` as root with mode `600` before installing.
+starts `knockknock.socket`. To supply your own secret, create
+`/etc/knockknock.secret` as root with mode `600` before installing.
 
 The daemon requires a root-owned file with no group/other permissions (`600` or `400`).
 
@@ -64,8 +64,8 @@ first line is rejected, not truncated. Packets must match the secret byte-for-by
 
 If the secret file has the wrong owner or permissions, or the secret is missing,
 unreadable, empty, or too long, the handler logs the error and drains queued
-packets without running UFW. Fix it and send a fresh knock; no socket reset or
-restart is needed since the daemon reads the file on each invocation.
+packets without updating the firewall. Fix it and send a fresh knock; no socket
+reset or restart is needed since the daemon reads the file on each invocation.
 
 The socket listens on UDP port 9999 by default. Test it with:
 
@@ -127,6 +127,25 @@ username1,username2` (or `-` when none). Usernames are distinct accounts
 observed from that IP in the last 30 days of the `ssh.service`/`sshd.service`
 journal.
 
+## FireHOL (optional, prefer ufw)
+
+Install `ipset` and add these lines to `/etc/firehol/firehol.conf`. Put the two
+`server` lines **inside the appropriate IPv4 `interface` block** (not at top
+level); use your actual SSH TCP port if it is not 22:
+
+```sh
+ipv4 ipset create knockknock_ssh hash:ip
+# In the relevant IPv4 interface block:
+server custom knockknock_udp udp/9999 default accept
+server custom knockknock_ssh tcp/22 default accept src ipset:knockknock_ssh
+```
+
+Apply your FireHOL configuration before testing knocks. Installation may run
+before this setup, but will not open UDP/9999 for FireHOL. Valid knocks try both
+UFW and `ipset -exist add knockknock_ssh <source-IP>`; a failure is logged only
+if both commands fail. The set must exist and the matching FireHOL rule must be
+active for the ipset update to grant access.
+
 ## End-to-end tests
 
 With Docker installed and running, use this while working:
@@ -162,9 +181,10 @@ contract is small: systemd supplies file descriptors starting at 3 and sets
 datagram socket before receiving packets.
 
 Each invocation drains the socket with nonblocking receives until the queue is
-empty. Invalid and oversized packets are rejected without running UFW. Their
-logs are summarized once per second during a busy invocation and again when it
-becomes idle; accepted knocks and UFW outcomes remain individually logged. The
+empty. Invalid and oversized packets are rejected without firewall updates.
+Their logs are summarized once per second during a busy invocation and again
+when it becomes idle; accepted knocks and successful firewall updates remain
+individually logged. The
 service's `StartLimitIntervalSec=0` and socket's `TriggerLimitIntervalSec=0`
 disable activation limits so unauthenticated traffic cannot leave knocking
 permanently disabled. Log aggregation reduces journal load, but does not bound

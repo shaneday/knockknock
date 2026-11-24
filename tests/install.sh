@@ -88,6 +88,11 @@ cmp "$secret" "$TEST_DIR/original-secret" || fail 'install replaced the existing
 printf '%s\n' 'daemon-reload' 'allow from 0.0.0.0/0 to any port 9999 proto udp comment knockknock UDP listener' \
     'enable --now knockknock.socket' >> "$TEST_DIR/expected"
 cmp "$TEST_DIR/expected" "$log" || fail 'reinstall did not reload and enable the socket'
+printf '#!/bin/sh\nexit 1\n' > "$TEST_DIR/ufw"
+PATH="$TEST_DIR:$PATH" SYSTEMCTL_LOG="$log" make install \
+    "BINDIR=$live/bin" "SYSTEMD_UNIT_DIR=$live/units" "SECRET_FILE=$secret" > "$TEST_DIR/install.out"
+printf '%s\n' 'daemon-reload' 'enable --now knockknock.socket' >> "$TEST_DIR/expected"
+cmp "$TEST_DIR/expected" "$log" || fail 'UFW failure prevented socket installation'
 PATH="$TEST_DIR:$PATH" SYSTEMCTL_LOG="$log" make uninstall \
     "BINDIR=$live/bin" "SYSTEMD_UNIT_DIR=$live/units" "SECRET_FILE=$secret"
 printf '%s\n' 'disable --now knockknock.socket' 'stop knockknock.service' \
